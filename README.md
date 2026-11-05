@@ -12,12 +12,13 @@ cp .env.example .env   # 填写 DASHSCOPE_API_KEY（可选，P2 起才用到）
 npm run dev            # 同时启动前端 (Vite) 和 API 代理 (Hono, :8787)
 ```
 
-| 命令             | 作用               |
-| ---------------- | ------------------ |
-| `npm test`       | 运行测试（Vitest） |
-| `npm run lint`   | 代码检查（oxlint） |
-| `npm run format` | 格式化（Prettier） |
-| `npm run build`  | 类型检查并构建     |
+| 命令                | 作用                                        |
+| ------------------- | ------------------------------------------- |
+| `npm run dev:phone` | 局域网 HTTPS 模式，供手机测试（自签名证书） |
+| `npm test`          | 运行测试（Vitest）                          |
+| `npm run lint`      | 代码检查（oxlint）                          |
+| `npm run format`    | 格式化（Prettier）                          |
+| `npm run build`     | 类型检查并构建                              |
 
 ## 目录
 

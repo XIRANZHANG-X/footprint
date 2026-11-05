@@ -1,34 +1,62 @@
-import { useEffect, useState } from 'react'
-
-type Health = { ok: boolean; aiConfigured: boolean }
+import { useLiveQuery } from 'dexie-react-hooks'
+import { useState, type ChangeEvent } from 'react'
+import { RecordCard } from './components/RecordCard.tsx'
+import { db } from './db.ts'
+import { importPhotos } from './lib/importPhotos.ts'
 
 function App() {
-  const [health, setHealth] = useState<Health | null>(null)
-  const [error, setError] = useState(false)
+  const records = useLiveQuery(() =>
+    db.records.orderBy('takenAt').reverse().toArray(),
+  )
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string>()
 
-  useEffect(() => {
-    fetch('/api/health')
-      .then((r) => r.json() as Promise<Health>)
-      .then(setHealth)
-      .catch(() => setError(true))
-  }, [])
+  async function onPick(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = '' // 允许再次选同一批照片
+    if (files.length === 0) return
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      const r = await importPhotos(files)
+      const parts = [`已导入 ${r.imported} 张`]
+      if (r.failed.length)
+        parts.push(`${r.failed.length} 张无法处理：${r.failed.join('、')}`)
+      setMessage(parts.join('；'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
-    <main className="mx-auto max-w-md px-4 py-10">
+    <main className="mx-auto min-h-dvh max-w-md bg-neutral-50 px-4 py-6">
       <h1 className="text-2xl font-semibold">足迹手账</h1>
-      <p className="mt-2 text-sm text-neutral-500">
-        P0 脚手架 · 记录功能在 P1 加入
-      </p>
-      <p className="mt-6 text-sm">
-        代理状态：
-        {error
-          ? '连不上（server 没启动？）'
-          : health === null
-            ? '检查中…'
-            : health.aiConfigured
-              ? '已连接，AI key 已配置'
-              : '已连接，AI key 未配置'}
-      </p>
+
+      <label
+        className={`mt-5 flex cursor-pointer items-center justify-center rounded-xl px-4 py-3 font-medium text-white ${
+          busy ? 'bg-neutral-400' : 'bg-emerald-600 hover:bg-emerald-700'
+        }`}
+      >
+        {busy ? '处理中…' : '＋ 选照片，新建一条记录'}
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          disabled={busy}
+          onChange={onPick}
+        />
+      </label>
+      {message && <p className="mt-2 text-sm text-neutral-600">{message}</p>}
+
+      <section className="mt-6 space-y-3">
+        {records?.length === 0 && (
+          <p className="text-center text-sm text-neutral-400">还没有记录</p>
+        )}
+        {records?.map((r) => (
+          <RecordCard key={r.id} record={r} />
+        ))}
+      </section>
     </main>
   )
 }
