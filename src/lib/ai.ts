@@ -3,6 +3,7 @@ import {
   geocodeResponse,
   transcribeResponse,
   type DescribeRequest,
+  type Geocode,
 } from '../../shared/ai.ts'
 import type { z } from 'zod'
 
@@ -57,4 +58,9 @@ export async function aiAvailable(): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+// "店名（城市 · 区 · 路）"；没有店名就只用地址
+export function placeLabel(g: Geocode): string | null {
+  return g.name ? `${g.name}（${g.address ?? ''}）` : g.address
 }

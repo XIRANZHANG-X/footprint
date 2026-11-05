@@ -1,6 +1,7 @@
 import type { LatLng, PhotoMeta, TimeSource } from './photoMeta.ts'
 
-export type LocationStatus = 'gps' | 'pending'
+// manual：用户在地图上手动点选的地点
+export type LocationStatus = 'gps' | 'pending' | 'manual'
 
 export type RecordSummary = {
   takenAt: number

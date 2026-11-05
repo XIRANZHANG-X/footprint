@@ -1,16 +1,20 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useEffect, useState, type ChangeEvent } from 'react'
+import { lazy, Suspense, useEffect, useState, type ChangeEvent } from 'react'
 import { Composer } from './components/Composer.tsx'
-import { RecordCard } from './components/RecordCard.tsx'
+import { Timeline } from './components/Timeline.tsx'
 import { db } from './db.ts'
 import { aiAvailable } from './lib/ai.ts'
 import { enrichRecord } from './lib/enrich.ts'
 import { importPhotos } from './lib/importPhotos.ts'
 
+// 地图（Leaflet）体积较大，切到地图页签时再加载，记录页打开更快
+const MapView = lazy(() =>
+  import('./components/MapView.tsx').then((m) => ({ default: m.MapView })),
+)
+
 function App() {
-  const records = useLiveQuery(() =>
-    db.records.orderBy('takenAt').reverse().toArray(),
-  )
+  const records = useLiveQuery(() => db.records.toArray())
+  const [tab, setTab] = useState<'timeline' | 'map'>('timeline')
   const [picked, setPicked] = useState<File[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string>()
@@ -74,14 +78,38 @@ function App() {
       )}
       {message && <p className="mt-2 text-sm text-neutral-600">{message}</p>}
 
-      <section className="mt-6 space-y-3">
-        {records?.length === 0 && (
-          <p className="text-center text-sm text-neutral-400">还没有记录</p>
-        )}
-        {records?.map((r) => (
-          <RecordCard key={r.id} record={r} />
+      <nav className="mt-5 grid grid-cols-2 rounded-lg bg-neutral-200 p-1 text-sm">
+        {(
+          [
+            ['timeline', '时间线'],
+            ['map', '地图'],
+          ] as const
+        ).map(([key, name]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`rounded-md py-1.5 ${tab === key ? 'bg-white font-medium shadow-sm' : 'text-neutral-600'}`}
+          >
+            {name}
+          </button>
         ))}
-      </section>
+      </nav>
+
+      {records &&
+        (tab === 'timeline' ? (
+          <Timeline records={records} />
+        ) : (
+          <Suspense
+            fallback={
+              <p className="mt-6 text-center text-sm text-neutral-400">
+                地图加载中…
+              </p>
+            }
+          >
+            <MapView records={records} />
+          </Suspense>
+        ))}
     </main>
   )
 }

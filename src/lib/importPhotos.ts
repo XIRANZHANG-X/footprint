@@ -50,6 +50,7 @@ export async function importPhotos(
       content: null,
       aiStatus: 'none',
       aiError: null,
+      tripBreak: null,
     })
   })
   return { recordId, imported: photos.length, failed }

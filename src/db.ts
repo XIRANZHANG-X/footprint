@@ -2,6 +2,7 @@ import { Dexie, type EntityTable } from 'dexie'
 import type { Description } from '../shared/ai.ts'
 import type { LatLng, TimeSource } from './lib/photoMeta.ts'
 import type { LocationStatus } from './lib/record.ts'
+import type { TripBreak } from './lib/trips.ts'
 
 export type AiStatus = 'none' | 'pending' | 'done' | 'error'
 
@@ -26,6 +27,7 @@ export type JournalRecord = {
   content: RecordContent | null
   aiStatus: AiStatus
   aiError: string | null
+  tripBreak: TripBreak // 用户对出行归组的手动修正（见 lib/trips.ts）
 }
 
 export type StoredPhoto = {
@@ -67,5 +69,17 @@ db.version(2)
         r.content ??= null
         r.aiStatus ??= 'none'
         r.aiError ??= null
+      }),
+  )
+
+// v3（P3）：出行归组的手动修正。
+db.version(3)
+  .stores({ records: 'id, takenAt', photos: 'id, recordId' })
+  .upgrade((tx) =>
+    tx
+      .table('records')
+      .toCollection()
+      .modify((r: Partial<JournalRecord>) => {
+        r.tripBreak ??= null
       }),
   )
