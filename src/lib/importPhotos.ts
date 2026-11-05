@@ -9,7 +9,10 @@ export type ImportResult = {
   failed: string[] // 处理失败的文件名（例如浏览器解不了的 HEIC）
 }
 
-export async function importPhotos(files: File[]): Promise<ImportResult> {
+export async function importPhotos(
+  files: File[],
+  note = '',
+): Promise<ImportResult> {
   const recordId = crypto.randomUUID()
   const photos: StoredPhoto[] = []
   const failed: string[] = []
@@ -41,6 +44,12 @@ export async function importPhotos(files: File[]): Promise<ImportResult> {
       createdAt: Date.now(),
       photoCount: photos.length,
       ...summary,
+      note: note.trim(),
+      placeName: null,
+      aiDraft: null,
+      content: null,
+      aiStatus: 'none',
+      aiError: null,
     })
   })
   return { recordId, imported: photos.length, failed }
