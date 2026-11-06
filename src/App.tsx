@@ -4,17 +4,25 @@ import { Composer } from './components/Composer.tsx'
 import { Timeline } from './components/Timeline.tsx'
 import { db } from './db.ts'
 import { aiAvailable } from './lib/ai.ts'
+import { getLastBackupAt, requestPersistence } from './lib/storage.ts'
 import { enrichRecord } from './lib/enrich.ts'
 import { importPhotos } from './lib/importPhotos.ts'
+import { backupReminder } from './lib/reminder.ts'
 
 // 地图（Leaflet）体积较大，切到地图页签时再加载，记录页打开更快
 const MapView = lazy(() =>
   import('./components/MapView.tsx').then((m) => ({ default: m.MapView })),
 )
+// 备份页依赖 zip 库，同样按需加载
+const BackupPanel = lazy(() =>
+  import('./components/BackupPanel.tsx').then((m) => ({
+    default: m.BackupPanel,
+  })),
+)
 
 function App() {
   const records = useLiveQuery(() => db.records.toArray())
-  const [tab, setTab] = useState<'timeline' | 'map'>('timeline')
+  const [tab, setTab] = useState<'timeline' | 'map' | 'backup'>('timeline')
   const [picked, setPicked] = useState<File[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string>()
@@ -23,6 +31,15 @@ function App() {
   useEffect(() => {
     void aiAvailable().then(setAiReady)
   }, [])
+
+  // 打开页面时的时间就够用了：提醒按"天"计算，不需要实时刷新
+  const [now] = useState(() => Date.now())
+  // 备份页导出后会更新上次备份时间；切换页签时重新渲染，这里会读到新值
+  const { unbacked, remind } = backupReminder(
+    records ?? [],
+    getLastBackupAt(),
+    now,
+  )
 
   function onPick(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
@@ -44,6 +61,8 @@ function App() {
       setPicked(null)
       // 先存好再整理：AI 慢或失败都不会丢记录
       if (r.recordId && aiReady) void enrichRecord(r.recordId)
+      // 有了第一批数据后申请持久化存储；浏览器拒绝也没关系，备份页可以再申请
+      void requestPersistence()
     } finally {
       setBusy(false)
     }
@@ -78,11 +97,23 @@ function App() {
       )}
       {message && <p className="mt-2 text-sm text-neutral-600">{message}</p>}
 
-      <nav className="mt-5 grid grid-cols-2 rounded-lg bg-neutral-200 p-1 text-sm">
+      {remind && tab !== 'backup' && (
+        <button
+          type="button"
+          onClick={() => setTab('backup')}
+          className="mt-3 w-full rounded-lg bg-amber-50 px-3 py-2 text-left text-sm text-amber-900"
+        >
+          有 {unbacked}{' '}
+          条记录超过一周还没备份，数据只存在这台手机的浏览器里。去备份 →
+        </button>
+      )}
+
+      <nav className="mt-5 grid grid-cols-3 rounded-lg bg-neutral-200 p-1 text-sm">
         {(
           [
             ['timeline', '时间线'],
             ['map', '地图'],
+            ['backup', '备份'],
           ] as const
         ).map(([key, name]) => (
           <button
@@ -96,20 +127,17 @@ function App() {
         ))}
       </nav>
 
-      {records &&
-        (tab === 'timeline' ? (
-          <Timeline records={records} />
-        ) : (
-          <Suspense
-            fallback={
-              <p className="mt-6 text-center text-sm text-neutral-400">
-                地图加载中…
-              </p>
-            }
-          >
-            <MapView records={records} />
-          </Suspense>
-        ))}
+      {records && (
+        <Suspense
+          fallback={
+            <p className="mt-6 text-center text-sm text-neutral-400">加载中…</p>
+          }
+        >
+          {tab === 'timeline' && <Timeline records={records} />}
+          {tab === 'map' && <MapView records={records} />}
+          {tab === 'backup' && <BackupPanel records={records} />}
+        </Suspense>
+      )}
     </main>
   )
 }

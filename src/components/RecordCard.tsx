@@ -1,10 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { CATEGORIES } from '../../shared/ai.ts'
 import { db, type JournalRecord, type RecordContent } from '../db.ts'
 import { enrichRecord, saveContent } from '../lib/enrich.ts'
 import { deleteRecord } from '../lib/importPhotos.ts'
 import { useObjectUrl } from './useObjectUrl.ts'
+
+// 分享图只在点击时才需要，按需加载
+const SharePreview = lazy(() =>
+  import('./SharePreview.tsx').then((m) => ({ default: m.SharePreview })),
+)
 
 function Thumb({ blob }: { blob: Blob }) {
   const url = useObjectUrl(blob)
@@ -91,6 +96,7 @@ export function RecordCard({ record }: { record: JournalRecord }) {
     [record.id],
   )
   const [editing, setEditing] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const content = record.content
   const link = 'text-xs text-neutral-400 hover:text-neutral-700'
 
@@ -221,7 +227,21 @@ export function RecordCard({ record }: { record: JournalRecord }) {
             {record.aiStatus === 'none' ? 'AI 整理' : '重新生成'}
           </button>
         )}
+        {!editing && (
+          <button
+            type="button"
+            className="ml-auto text-xs font-medium text-emerald-700"
+            onClick={() => setSharing(true)}
+          >
+            生成分享图
+          </button>
+        )}
       </footer>
+      {sharing && (
+        <Suspense fallback={null}>
+          <SharePreview record={record} onClose={() => setSharing(false)} />
+        </Suspense>
+      )}
     </article>
   )
 }
