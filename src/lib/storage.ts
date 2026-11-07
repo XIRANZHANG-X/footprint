@@ -30,3 +30,24 @@ export async function requestPersistence(): Promise<boolean> {
     return false
   }
 }
+
+// 访问口令（决策 0008）。放 localStorage：只在这台设备的这个网站里可读；
+// 清除浏览器数据后重新输入一次即可
+const ACCESS_TOKEN_KEY = 'footprint-journal:accessToken'
+
+export function getAccessToken(): string | null {
+  try {
+    return localStorage.getItem(ACCESS_TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setAccessToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(ACCESS_TOKEN_KEY, token)
+    else localStorage.removeItem(ACCESS_TOKEN_KEY)
+  } catch {
+    // 写不进去时只是下次还要再输入
+  }
+}

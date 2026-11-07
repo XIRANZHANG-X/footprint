@@ -1,9 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { lazy, Suspense, useEffect, useState, type ChangeEvent } from 'react'
-import { Composer } from './components/Composer.tsx'
 import { Timeline } from './components/Timeline.tsx'
 import { db } from './db.ts'
-import { aiAvailable } from './lib/ai.ts'
+import { checkAi, type AiState } from './lib/ai.ts'
 import { getLastBackupAt, requestPersistence } from './lib/storage.ts'
 import { enrichRecord } from './lib/enrich.ts'
 import { importPhotos } from './lib/importPhotos.ts'
@@ -12,6 +11,15 @@ import { backupReminder } from './lib/reminder.ts'
 // 地图（Leaflet）体积较大，切到地图页签时再加载，记录页打开更快
 const MapView = lazy(() =>
   import('./components/MapView.tsx').then((m) => ({ default: m.MapView })),
+)
+// 选完照片才出现的编辑区（含录音和 WAV 编码）、只在需要口令时出现的输入框，都按需加载
+const Composer = lazy(() =>
+  import('./components/Composer.tsx').then((m) => ({ default: m.Composer })),
+)
+const AccessGate = lazy(() =>
+  import('./components/AccessGate.tsx').then((m) => ({
+    default: m.AccessGate,
+  })),
 )
 // 备份页依赖 zip 库，同样按需加载
 const BackupPanel = lazy(() =>
@@ -26,10 +34,11 @@ function App() {
   const [picked, setPicked] = useState<File[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string>()
-  const [aiReady, setAiReady] = useState(false)
+  const [aiState, setAiState] = useState<AiState>('unavailable')
+  const aiReady = aiState === 'ready'
 
   useEffect(() => {
-    void aiAvailable().then(setAiReady)
+    void checkAi().then(setAiState)
   }, [])
 
   // 打开页面时的时间就够用了：提醒按"天"计算，不需要实时刷新
@@ -76,12 +85,14 @@ function App() {
         busy ? (
           <p className="mt-5 text-center text-sm text-neutral-500">保存中…</p>
         ) : (
-          <Composer
-            files={picked}
-            aiReady={aiReady}
-            onDone={(note) => void onDone(note)}
-            onCancel={() => setPicked(null)}
-          />
+          <Suspense fallback={null}>
+            <Composer
+              files={picked}
+              aiReady={aiReady}
+              onDone={(note) => void onDone(note)}
+              onCancel={() => setPicked(null)}
+            />
+          </Suspense>
         )
       ) : (
         <label className="mt-5 flex cursor-pointer items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 font-medium text-white hover:bg-emerald-700">
@@ -96,6 +107,12 @@ function App() {
         </label>
       )}
       {message && <p className="mt-2 text-sm text-neutral-600">{message}</p>}
+
+      {aiState === 'needsToken' && (
+        <Suspense fallback={null}>
+          <AccessGate onResult={setAiState} />
+        </Suspense>
+      )}
 
       {remind && tab !== 'backup' && (
         <button

@@ -25,3 +25,7 @@ dist-ssr
 
 # Secrets
 .env
+.dev.vars*
+
+# Wrangler 本地缓存
+.wrangler

@@ -1,0 +1,17 @@
+// Cloudflare Workers 部署配置（决策 0007）。
+// 一个 Worker 同时提供前端静态文件（dist/）和 /api/* 代理。
+// 密钥不写在这里：DASHSCOPE_API_KEY 和 ACCESS_TOKEN 用 `wrangler secret put` 设置。
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "footprint-journal",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    // 单页应用：找不到的路径都返回 index.html
+    "not_found_handling": "single-page-application",
+    // 否则 /api/* 也会被当成"找不到的页面"返回 index.html
+    "run_worker_first": ["/api/*"],
+  },
+  "observability": { "enabled": true },
+}

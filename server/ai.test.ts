@@ -1,17 +1,25 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { app } from './app.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp } from './app.ts'
+import type { Env } from './env.ts'
 import { extractJsonObject } from './dashscope.ts'
 import { cacheKey, formatNominatim } from './geocode.ts'
 
 const IMG = 'data:image/jpeg;base64,AAAA'
 const WAV = 'data:audio/wav;base64,AAAA'
 
-function post(path: string, body: unknown) {
-  return app.request(`/api${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+const app = createApp({ requireAccessToken: false })
+const ENV: Env = { DASHSCOPE_API_KEY: 'sk-test-not-real' }
+
+function post(path: string, body: unknown, env: Env = ENV) {
+  return app.request(
+    `/api${path}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    env,
+  )
 }
 
 type FetchMock = ReturnType<typeof vi.fn<typeof fetch>>
@@ -38,20 +46,13 @@ async function json(res: Response): Promise<Record<string, unknown>> {
 }
 
 describe('AI routes', () => {
-  const original = process.env.DASHSCOPE_API_KEY
-  beforeEach(() => {
-    process.env.DASHSCOPE_API_KEY = 'sk-test-not-real'
-  })
   afterEach(() => {
     vi.unstubAllGlobals()
-    if (original === undefined) delete process.env.DASHSCOPE_API_KEY
-    else process.env.DASHSCOPE_API_KEY = original
   })
 
   it('returns 503 without calling upstream when the key is missing', async () => {
-    delete process.env.DASHSCOPE_API_KEY
     const fetchMock = mockChatReply('{}')
-    const res = await post('/describe', { images: [IMG] })
+    const res = await post('/describe', { images: [IMG] }, {})
     expect(res.status).toBe(503)
     expect(fetchMock).not.toHaveBeenCalled()
   })

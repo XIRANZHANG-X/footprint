@@ -1,14 +1,18 @@
-// 百炼（DashScope）OpenAI 兼容接口的最小封装。地址和模型名都可以在 .env 里覆盖。
-export function dashscopeConfig() {
+import type { Env } from './env.ts'
+
+// 百炼（DashScope）OpenAI 兼容接口的最小封装。地址和模型名都可以在环境变量里覆盖。
+export function dashscopeConfig(env: Env) {
   return {
-    apiKey: process.env.DASHSCOPE_API_KEY ?? '',
+    apiKey: env.DASHSCOPE_API_KEY ?? '',
     baseUrl:
-      process.env.DASHSCOPE_BASE_URL ??
+      env.DASHSCOPE_BASE_URL ??
       'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    asrModel: process.env.ASR_MODEL ?? 'qwen3-asr-flash',
-    vlModel: process.env.VL_MODEL ?? 'qwen3-vl-plus',
+    asrModel: env.ASR_MODEL ?? 'qwen3-asr-flash',
+    vlModel: env.VL_MODEL ?? 'qwen3-vl-plus',
   }
 }
+
+export type DashscopeConfig = ReturnType<typeof dashscopeConfig>
 
 export class UpstreamError extends Error {
   readonly status: number
@@ -21,8 +25,10 @@ export class UpstreamError extends Error {
 type ChatResponse = { choices?: { message?: { content?: unknown } }[] }
 
 // 调用 /chat/completions，返回第一条回复的文本
-export async function chat(body: Record<string, unknown>): Promise<string> {
-  const { apiKey, baseUrl } = dashscopeConfig()
+export async function chat(
+  { apiKey, baseUrl }: DashscopeConfig,
+  body: Record<string, unknown>,
+): Promise<string> {
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
