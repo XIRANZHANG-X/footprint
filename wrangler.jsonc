@@ -6,6 +6,9 @@
   "name": "footprint-journal",
   "main": "server/worker.ts",
   "compatibility_date": "2026-11-01",
+  // 使用免费的 *.workers.dev 网址；不开每个版本单独的预览网址，对外只有一个入口
+  "workers_dev": true,
+  "preview_urls": false,
   "assets": {
     "directory": "./dist",
     // 单页应用：找不到的路径都返回 index.html
