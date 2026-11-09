@@ -17,7 +17,7 @@ function Thumb({ blob }: { blob: Blob }) {
     <img
       src={url}
       alt=""
-      className="aspect-square w-full rounded object-cover"
+      className="aspect-square w-full border-2 border-ink object-cover"
     />
   ) : null
 }
@@ -38,9 +38,9 @@ function Editor({
 }) {
   const [c, setC] = useState(initial)
   const [tags, setTags] = useState(initial.tags.join(' '))
-  const input = 'w-full rounded border border-neutral-200 p-1.5 text-sm'
+  const input = 'px-input'
   return (
-    <div className="mt-3 space-y-2">
+    <div className="mt-3 space-y-3">
       <input
         className={input}
         value={c.title}
@@ -69,8 +69,8 @@ function Editor({
         placeholder="标签，用空格分隔"
         onChange={(e) => setTags(e.target.value)}
       />
-      <div className="flex justify-end gap-2 text-sm">
-        <button type="button" onClick={onCancel} className="px-3 py-1">
+      <div className="flex justify-end gap-3">
+        <button type="button" onClick={onCancel} className="px-btn px-btn-sm">
           取消
         </button>
         <button
@@ -81,7 +81,7 @@ function Editor({
               tags: tags.split(/\s+/).filter(Boolean).slice(0, 5),
             })
           }
-          className="rounded bg-emerald-600 px-3 py-1 text-white"
+          className="px-btn px-btn-sm bg-berry"
         >
           保存
         </button>
@@ -98,36 +98,34 @@ export function RecordCard({ record }: { record: JournalRecord }) {
   const [editing, setEditing] = useState(false)
   const [sharing, setSharing] = useState(false)
   const content = record.content
-  const link = 'text-xs text-neutral-400 hover:text-neutral-700'
 
   return (
-    <article className="rounded-xl border border-neutral-200 bg-white p-3 shadow-sm">
+    <article className="px-card p-3">
       <header className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          {content && !editing && (
-            <h2 className="text-lg font-semibold">{content.title}</h2>
-          )}
-          <p className="text-sm text-neutral-500">
-            {dateFmt.format(record.takenAt)}
-            {content && <span className="ml-2">{content.category}</span>}
+          <p className="font-pixel text-[12px] text-ink-soft">
+            {dateFmt.format(record.takenAt)} · {record.photoCount} 张
           </p>
+          {content && !editing && (
+            <h3 className="px-title mt-1 text-[20px]">{content.title}</h3>
+          )}
           {record.timeSource === 'file' && (
-            <p className="text-xs text-amber-600">
+            <p className="mt-1 text-xs text-ink-soft">
               照片没有拍摄时间，这里用的是文件时间，可能不准
             </p>
           )}
-          <p className="mt-1 text-sm text-neutral-600">
-            {record.placeName ??
-              (record.location ? (
-                `${record.location.lat.toFixed(4)}, ${record.location.lng.toFixed(4)}`
-              ) : (
-                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
-                  待定位
-                </span>
-              ))}
-            <span className="ml-2 text-neutral-400">
-              {record.photoCount} 张
-            </span>
+          <p className="mt-2 flex flex-wrap gap-1.5">
+            {record.placeName ? (
+              <span className="px-tag bg-sky">{record.placeName}</span>
+            ) : record.location ? (
+              <span className="px-tag bg-sky">
+                {record.location.lat.toFixed(4)},{' '}
+                {record.location.lng.toFixed(4)}
+              </span>
+            ) : (
+              <span className="px-tag bg-lemon">待定位</span>
+            )}
+            {content && <span className="px-tag">{content.category}</span>}
           </p>
         </div>
         <button
@@ -136,13 +134,13 @@ export function RecordCard({ record }: { record: JournalRecord }) {
             if (confirm('删除这条记录和其中的照片？'))
               void deleteRecord(record.id)
           }}
-          className="shrink-0 text-xs text-neutral-400 hover:text-red-600"
+          className="-m-1 shrink-0 p-1 text-xs text-ink-soft hover:text-cherry"
         >
           删除
         </button>
       </header>
 
-      <div className="mt-3 grid grid-cols-3 gap-1.5">
+      <div className="mt-3 grid grid-cols-3 gap-2">
         {photos?.map((p) => (
           <Thumb key={p.id} blob={p.thumb} />
         ))}
@@ -161,16 +159,13 @@ export function RecordCard({ record }: { record: JournalRecord }) {
         <>
           {content && (
             <>
-              <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap">
+              <p className="mt-3 text-[15px] leading-relaxed whitespace-pre-wrap">
                 {content.intro}
               </p>
               {content.tags.length > 0 && (
-                <p className="mt-2 flex flex-wrap gap-1">
+                <p className="mt-3 flex flex-wrap gap-1.5">
                   {content.tags.map((t) => (
-                    <span
-                      key={t}
-                      className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700"
-                    >
+                    <span key={t} className="px-tag bg-mint">
                       #{t}
                     </span>
                   ))}
@@ -179,26 +174,26 @@ export function RecordCard({ record }: { record: JournalRecord }) {
             </>
           )}
           {record.note && (
-            <p className="mt-2 border-l-2 border-neutral-200 pl-2 text-xs text-neutral-500">
+            <p className="mt-3 border-l-2 border-dashed border-ink-soft pl-2 text-xs text-ink-soft">
               原话：{record.note}
             </p>
           )}
         </>
       )}
 
-      <footer className="mt-2 flex items-center gap-3">
+      <footer className="mt-4 flex flex-wrap items-center gap-2">
         {record.aiStatus === 'pending' && (
-          <span className="text-xs text-emerald-700">AI 整理中…</span>
+          <span className="px-tag bg-mint">AI 整理中…</span>
         )}
         {record.aiStatus === 'error' && (
-          <span className="text-xs text-red-600">
+          <span className="w-full text-xs text-cherry">
             整理失败：{record.aiError}
           </span>
         )}
         {content && !editing && (
           <button
             type="button"
-            className={link}
+            className="px-btn px-btn-sm"
             onClick={() => setEditing(true)}
           >
             编辑
@@ -207,7 +202,7 @@ export function RecordCard({ record }: { record: JournalRecord }) {
         {record.aiStatus !== 'pending' && (
           <button
             type="button"
-            className={link}
+            className="px-btn px-btn-sm bg-mint"
             onClick={() => {
               const edited =
                 content !== null &&
@@ -230,7 +225,7 @@ export function RecordCard({ record }: { record: JournalRecord }) {
         {!editing && (
           <button
             type="button"
-            className="ml-auto text-xs font-medium text-emerald-700"
+            className="px-btn px-btn-sm ml-auto bg-berry"
             onClick={() => setSharing(true)}
           >
             生成分享图

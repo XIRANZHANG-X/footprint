@@ -1,1 +1,163 @@
+/* Hallmark · app redesign · style: pixel + macaron (studied-DNA: RetroUI screenshot, user reference)
+ * paper oklch(98.8% 0.012 80) · ink oklch(27% 0.035 315) · display: Fusion Pixel 12px (OFL) · body: system sans
+ * 决策 0010：五种马卡龙色各管一类东西，见下面 --color-* 的注释
+ */
 @import 'tailwindcss';
+
+/* 缝合像素字体（Fusion Pixel Font，OFL 协议，协议原文在同目录 OFL.txt）。
+   只用于标题、按钮、标签；先显示系统字体，加载完再换上 */
+@font-face {
+  font-family: 'Fusion Pixel';
+  src: url('./assets/fonts/fusion-pixel-12px-zh_hans.woff2') format('woff2');
+  font-display: swap;
+}
+
+@theme {
+  --font-pixel: 'Fusion Pixel', ui-monospace, monospace;
+  --font-sans:
+    system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  --color-paper: oklch(98.8% 0.012 80); /* 奶油白底纸 */
+  --color-grid: oklch(94% 0.018 310); /* 底纸方格线 */
+  --color-card: oklch(100% 0 0);
+  --color-ink: oklch(27% 0.035 315); /* 描边、正文：深紫黑，不用纯黑 */
+  --color-ink-soft: oklch(48% 0.035 310); /* 次要文字 */
+  --color-berry: oklch(90% 0.055 355); /* 草莓粉：主要操作 */
+  --color-mint: oklch(92% 0.06 165); /* 薄荷绿：AI、完成 */
+  --color-taro: oklch(88% 0.065 300); /* 香芋紫：出行分组 */
+  --color-lemon: oklch(95% 0.1 100); /* 柠檬黄：提醒、待定位 */
+  --color-sky: oklch(92% 0.05 240); /* 天空蓝：地图、地点 */
+  --color-cherry: oklch(50% 0.17 15); /* 删除、出错的文字 */
+
+  --shadow-px: 4px 4px 0 var(--color-ink);
+  --shadow-px-sm: 2px 2px 0 var(--color-ink);
+}
+
+@layer base {
+  html,
+  body {
+    overflow-x: clip;
+  }
+  body {
+    background-color: var(--color-paper);
+    background-image:
+      linear-gradient(var(--color-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+    background-size: 16px 16px;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+  }
+  :focus-visible {
+    outline: 2px dashed var(--color-ink);
+    outline-offset: 3px;
+  }
+}
+
+@layer components {
+  /* 卡片：粗描边 + 实心硬阴影 */
+  .px-card {
+    border: 2px solid var(--color-ink);
+    background: var(--color-card);
+    box-shadow: var(--shadow-px);
+  }
+
+  /* 按钮：底色由调用处加 bg-berry / bg-mint 等；按下时阴影收回、按钮下沉 */
+  .px-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: 2.5rem;
+    padding: 0.375rem 0.875rem;
+    border: 2px solid var(--color-ink);
+    background: var(--color-card);
+    box-shadow: var(--shadow-px-sm);
+    color: var(--color-ink);
+    font-family: var(--font-pixel);
+    font-size: 16px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .px-btn:hover {
+    filter: brightness(0.97);
+  }
+  .px-btn:active,
+  .px-btn[aria-pressed='true'] {
+    transform: translate(2px, 2px);
+    box-shadow: none;
+  }
+  .px-btn:disabled,
+  .px-btn[aria-busy='true'] {
+    border-style: dashed;
+    box-shadow: none;
+    color: var(--color-ink-soft);
+    cursor: default;
+  }
+  .px-btn-sm {
+    min-height: 2rem;
+    padding: 0.25rem 0.625rem;
+    font-size: 12px;
+  }
+
+  /* 小标签：分类、地点、待定位、第几次 */
+  .px-tag {
+    display: inline-flex;
+    align-items: center;
+    border: 2px solid var(--color-ink);
+    padding: 0.125rem 0.375rem;
+    font-family: var(--font-pixel);
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .px-input {
+    width: 100%;
+    border: 2px solid var(--color-ink);
+    background: var(--color-card);
+    padding: 0.5rem;
+    font-size: 15px;
+  }
+  .px-input:focus {
+    outline: none;
+    box-shadow: var(--shadow-px-sm);
+  }
+
+  /* 像素字的标题 */
+  .px-title {
+    font-family: var(--font-pixel);
+    font-weight: 400;
+    line-height: 1.25;
+  }
+}
+
+/* 地图弹窗：Leaflet 自带圆角白框，改成和卡片一样的粗描边 */
+.leaflet-container .leaflet-popup-content-wrapper {
+  border: 2px solid var(--color-ink);
+  border-radius: 0;
+  box-shadow: var(--shadow-px-sm);
+  color: var(--color-ink);
+}
+.leaflet-container .leaflet-bar {
+  border: 2px solid var(--color-ink);
+  border-radius: 0;
+  box-shadow: var(--shadow-px-sm);
+}
+.leaflet-container .leaflet-bar a {
+  border-radius: 0;
+  color: var(--color-ink);
+}
+.leaflet-container .leaflet-popup-tip {
+  box-shadow: none;
+  border: 2px solid var(--color-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .px-btn {
+    transition: none;
+  }
+}

@@ -16,7 +16,7 @@ function PreviewImage({ blob }: { blob: Blob }) {
     <img
       src={url}
       alt="分享图预览"
-      className="max-h-[70dvh] w-auto rounded-lg shadow"
+      className="max-h-[70dvh] w-auto border-2 border-paper"
     />
   ) : null
 }
@@ -86,7 +86,7 @@ export function SharePreview({
 
   return (
     <div
-      className="fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-3 bg-black/70 p-4"
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-3 bg-ink/80 p-4"
       onClick={onClose}
     >
       <div
@@ -96,23 +96,19 @@ export function SharePreview({
         {blob ? (
           <PreviewImage blob={blob} />
         ) : (
-          <p className="text-sm text-white">
+          <p className="font-pixel text-[12px] text-paper">
             {error ? `生成失败：${error}` : '生成中…'}
           </p>
         )}
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg bg-white/20 px-4 py-2 text-sm text-white"
-          >
+        <div className="flex gap-3">
+          <button type="button" onClick={onClose} className="px-btn">
             关闭
           </button>
           {file && native && (
             <button
               type="button"
               onClick={() => void shareInApp(file)}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
+              className="px-btn bg-berry"
             >
               存相册并分享…
             </button>
@@ -121,7 +117,7 @@ export function SharePreview({
             <button
               type="button"
               onClick={() => void saveFile(file, file.name).catch(() => {})}
-              className="rounded-lg bg-white px-4 py-2 text-sm font-medium"
+              className="px-btn"
             >
               保存图片
             </button>
@@ -132,17 +128,17 @@ export function SharePreview({
               onClick={() =>
                 void navigator.share({ files: [file] }).catch(() => {})
               }
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
+              className="px-btn bg-berry"
             >
               分享…
             </button>
           )}
         </div>
         {notice && (
-          <p className="max-w-xs text-center text-xs text-white/80">{notice}</p>
+          <p className="max-w-xs text-center text-xs text-paper">{notice}</p>
         )}
         {shareBlocker && (
-          <p className="max-w-xs text-center text-xs text-white/70">
+          <p className="max-w-xs text-center text-xs text-paper">
             {shareBlocker}，请先保存图片，再从相册发到微信。
           </p>
         )}

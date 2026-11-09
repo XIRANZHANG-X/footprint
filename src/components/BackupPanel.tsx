@@ -63,37 +63,38 @@ export function BackupPanel({ records }: { records: JournalRecord[] }) {
     }
   }
 
-  const row = 'flex justify-between gap-2 py-1'
+  const row =
+    'flex justify-between gap-2 border-b-2 border-dashed border-grid py-1.5 last:border-0'
   return (
     <section className="mt-5 space-y-4">
-      <div className="rounded-xl bg-white p-3 text-sm shadow-sm">
-        <p className="mb-1 font-medium">数据只存在这台设备的浏览器里</p>
+      <div className="px-card p-3 text-sm">
+        <p className="px-title mb-2 text-[16px]">数据只存在这台设备里</p>
         <div className={row}>
-          <span className="text-neutral-500">记录</span>
+          <span className="text-ink-soft">记录</span>
           <span>
             {records.length} 条{usage && ` · 占用约 ${usage}`}
           </span>
         </div>
         <div className={row}>
-          <span className="text-neutral-500">上次备份</span>
+          <span className="text-ink-soft">上次备份</span>
           <span>
             {lastBackupAt ? timeFmt.format(lastBackupAt) : '从未备份'}
           </span>
         </div>
         <div className={row}>
-          <span className="text-neutral-500">未备份</span>
-          <span className={unbacked ? 'text-amber-700' : ''}>
+          <span className="text-ink-soft">未备份</span>
+          <span className={unbacked ? 'px-tag bg-lemon' : ''}>
             {unbacked} 条
           </span>
         </div>
         <div className={row}>
-          <span className="text-neutral-500">持久保存</span>
+          <span className="text-ink-soft">持久保存</span>
           {persisted ? (
-            <span className="text-emerald-700">已开启</span>
+            <span className="px-tag bg-mint">已开启</span>
           ) : (
             <button
               type="button"
-              className="text-emerald-700 underline"
+              className="px-btn px-btn-sm"
               onClick={() => void requestPersistence().then(setPersisted)}
             >
               {persisted === false ? '未开启，点击申请' : '检查中…'}
@@ -101,7 +102,7 @@ export function BackupPanel({ records }: { records: JournalRecord[] }) {
           )}
         </div>
         {persisted === false && (
-          <p className="mt-1 text-xs text-neutral-500">
+          <p className="mt-2 text-xs text-ink-soft">
             浏览器可能不同意（取决于你的使用频率等）。把网页"添加到主屏幕"后更容易获批。即使开启，也建议定期导出备份。
           </p>
         )}
@@ -111,12 +112,14 @@ export function BackupPanel({ records }: { records: JournalRecord[] }) {
         type="button"
         disabled={busy || records.length === 0}
         onClick={() => void onExport()}
-        className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-medium text-white disabled:bg-neutral-400"
+        aria-busy={busy}
+        className="px-btn min-h-12 w-full bg-berry"
       >
         {busy ? '处理中…' : '导出备份（zip）'}
       </button>
       <label
-        className={`flex w-full cursor-pointer items-center justify-center rounded-xl border border-neutral-300 bg-white px-4 py-3 font-medium ${busy ? 'pointer-events-none opacity-50' : ''}`}
+        aria-busy={busy}
+        className={`px-btn flex min-h-12 w-full ${busy ? 'pointer-events-none' : ''}`}
       >
         从备份导入
         <input
@@ -127,10 +130,10 @@ export function BackupPanel({ records }: { records: JournalRecord[] }) {
           onChange={(e) => void onImport(e)}
         />
       </label>
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-ink-soft">
         导入是合并：备份里的记录会加进来（同一条记录以备份为准），这台设备上已有的其他记录不受影响。
       </p>
-      {message && <p className="text-sm text-neutral-700">{message}</p>}
+      {message && <p className="px-card p-3 text-sm">{message}</p>}
     </section>
   )
 }

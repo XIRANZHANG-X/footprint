@@ -13,7 +13,7 @@ function Preview({ file }: { file: File }) {
     <img
       src={url}
       alt=""
-      className="aspect-square w-full rounded object-cover"
+      className="aspect-square w-full border-2 border-ink object-cover"
     />
   ) : null
 }
@@ -80,8 +80,8 @@ export function Composer({
   }
 
   return (
-    <section className="mt-5 rounded-xl border border-emerald-200 bg-white p-3 shadow-sm">
-      <div className="grid grid-cols-4 gap-1.5">
+    <section className="px-card mt-5 p-3">
+      <div className="grid grid-cols-4 gap-2">
         {files.map((f, i) => (
           <Preview key={i} file={f} />
         ))}
@@ -92,17 +92,24 @@ export function Composer({
           type="button"
           onClick={() => void toggleRecord()}
           disabled={phase === 'transcribing'}
-          className={`mt-3 w-full rounded-lg px-4 py-3 font-medium ${
-            phase === 'recording'
-              ? 'animate-pulse bg-red-600 text-white'
-              : 'bg-neutral-100 text-neutral-800'
+          aria-pressed={phase === 'recording'}
+          aria-busy={phase === 'transcribing'}
+          className={`px-btn mt-4 min-h-12 w-full ${
+            phase === 'recording' ? 'bg-berry' : 'bg-mint'
           }`}
         >
-          {phase === 'recording'
-            ? `● 录音中 ${seconds}s，点一下结束（最长 ${MAX_RECORD_SECONDS}s）`
-            : phase === 'transcribing'
-              ? '识别中…'
-              : '🎤 说一句话'}
+          {phase === 'recording' ? (
+            <>
+              <span className="animate-pulse text-cherry" aria-hidden="true">
+                ●
+              </span>
+              录音中 {seconds}s · 点一下结束（最长 {MAX_RECORD_SECONDS}s）
+            </>
+          ) : phase === 'transcribing' ? (
+            '识别中…'
+          ) : (
+            '按一下，说一句话'
+          )}
         </button>
       )}
 
@@ -115,21 +122,21 @@ export function Composer({
             ? '识别结果会出现在这里，可以修改；也可以直接打字'
             : '写一句话（可选）'
         }
-        className="mt-3 w-full rounded-lg border border-neutral-200 p-2 text-sm"
+        className="px-input mt-3"
       />
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-cherry">{error}</p>}
       {!aiReady && (
-        <p className="mt-1 text-xs text-neutral-500">
+        <p className="mt-1 text-xs text-ink-soft">
           服务端没有配置 AI key，本次只保存照片和文字。
         </p>
       )}
 
-      <div className="mt-3 flex gap-2">
+      <div className="mt-4 flex gap-3">
         <button
           type="button"
           onClick={onCancel}
           disabled={phase !== 'idle'}
-          className="flex-1 rounded-lg border border-neutral-200 px-4 py-2 text-sm"
+          className="px-btn flex-1"
         >
           取消
         </button>
@@ -137,7 +144,7 @@ export function Composer({
           type="button"
           onClick={() => onDone(note)}
           disabled={phase !== 'idle'}
-          className="flex-[2] rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white disabled:bg-neutral-400"
+          className="px-btn flex-[2] bg-berry"
         >
           完成
         </button>

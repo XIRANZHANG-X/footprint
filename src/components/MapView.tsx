@@ -23,7 +23,10 @@ const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 
 // 按出行轮换的颜色
-const TRIP_COLORS = ['#059669', '#2563eb', '#d97706', '#db2777', '#7c3aed']
+// 每次出行一种马卡龙色（柠檬黄留给"待定位"，不用在这里）。
+// Leaflet 把颜色写进 SVG 属性，不认 CSS 变量，所以这里写死；数值和 index.css 里的同名颜色一致
+const TRIP_COLORS = ['#fdd0e0', '#c0f2db', '#decefd', '#c7eaff']
+const INK = '#2d2132'
 const CHINA: [number, number] = [35, 105]
 
 const dateFmt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' })
@@ -76,29 +79,29 @@ export function MapView({ records }: { records: JournalRecord[] }) {
   return (
     <div className="mt-5">
       {placing ? (
-        <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <div className="px-card mb-4 flex items-center justify-between gap-2 bg-lemon px-3 py-2 text-sm">
           <span>在地图上点一下，设置「{label(placing)}」的位置</span>
           <button
             type="button"
             onClick={() => setPlacing(null)}
-            className="ml-2 shrink-0 underline"
+            className="px-btn px-btn-sm shrink-0"
           >
             取消
           </button>
         </div>
       ) : (
         pending.length > 0 && (
-          <div className="mb-2 rounded-lg bg-white p-2 text-sm shadow-sm">
-            <p className="text-neutral-500">
+          <div className="px-card mb-4 p-3 text-sm">
+            <p className="text-ink-soft">
               待定位 {pending.length} 条，点一条再到地图上选位置：
             </p>
-            <div className="mt-1 flex flex-wrap gap-1">
+            <div className="mt-2 flex flex-wrap gap-2">
               {pending.map((r) => (
                 <button
                   key={r.id}
                   type="button"
                   onClick={() => setPlacing(r)}
-                  className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800"
+                  className="px-btn px-btn-sm bg-lemon"
                 >
                   {label(r)}
                 </button>
@@ -111,7 +114,7 @@ export function MapView({ records }: { records: JournalRecord[] }) {
       <MapContainer
         center={CHINA}
         zoom={4}
-        className={`h-[65dvh] w-full rounded-xl ${placing ? 'cursor-crosshair' : ''}`}
+        className={`h-[65dvh] w-full border-2 border-ink shadow-px ${placing ? 'cursor-crosshair' : ''}`}
       >
         <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
         <FitToRecords points={points} />
@@ -134,10 +137,10 @@ export function MapView({ records }: { records: JournalRecord[] }) {
                     r.location!.lng,
                   ])}
                   pathOptions={{
-                    color,
-                    weight: 3,
-                    opacity: 0.6,
-                    dashArray: '6 6',
+                    color: INK,
+                    weight: 2,
+                    opacity: 0.7,
+                    dashArray: '4 6',
                   }}
                 />
               )}
@@ -147,21 +150,23 @@ export function MapView({ records }: { records: JournalRecord[] }) {
                   center={[r.location!.lat, r.location!.lng]}
                   radius={8}
                   pathOptions={{
-                    color: 'white',
+                    color: INK,
                     weight: 2,
                     fillColor: color,
                     fillOpacity: 1,
                   }}
                 >
                   <Popup>
-                    <p className="font-medium">{label(r)}</p>
+                    <p className="font-pixel text-[12px]">{label(r)}</p>
                     {r.placeName && (
-                      <p className="text-xs text-neutral-500">{r.placeName}</p>
+                      <p className="mt-1 text-xs text-ink-soft">
+                        {r.placeName}
+                      </p>
                     )}
                     <button
                       type="button"
                       onClick={() => setPlacing(r)}
-                      className="mt-1 text-xs text-emerald-700 underline"
+                      className="px-btn px-btn-sm mt-2 bg-sky"
                     >
                       改位置
                     </button>

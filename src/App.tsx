@@ -78,12 +78,14 @@ function App() {
   }
 
   return (
-    <main className="mx-auto min-h-dvh max-w-md bg-neutral-50 px-4 py-6">
-      <h1 className="text-2xl font-semibold">足迹手账</h1>
+    <main className="mx-auto min-h-dvh max-w-md px-4 py-6">
+      <h1 className="px-title text-[24px]">足迹手账</h1>
 
       {picked ? (
         busy ? (
-          <p className="mt-5 text-center text-sm text-neutral-500">保存中…</p>
+          <p className="mt-5 text-center font-pixel text-[12px] text-ink-soft">
+            保存中…
+          </p>
         ) : (
           <Suspense fallback={null}>
             <Composer
@@ -95,7 +97,7 @@ function App() {
           </Suspense>
         )
       ) : (
-        <label className="mt-5 flex cursor-pointer items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 font-medium text-white hover:bg-emerald-700">
+        <label className="px-btn mt-5 flex min-h-12 w-full bg-berry text-[16px]">
           ＋ 选照片，新建一条记录
           <input
             type="file"
@@ -106,7 +108,7 @@ function App() {
           />
         </label>
       )}
-      {message && <p className="mt-2 text-sm text-neutral-600">{message}</p>}
+      {message && <p className="mt-3 text-sm text-ink-soft">{message}</p>}
 
       {aiState === 'needsToken' && (
         <Suspense fallback={null}>
@@ -118,14 +120,14 @@ function App() {
         <button
           type="button"
           onClick={() => setTab('backup')}
-          className="mt-3 w-full rounded-lg bg-amber-50 px-3 py-2 text-left text-sm text-amber-900"
+          className="px-card mt-4 w-full bg-lemon px-3 py-2 text-left text-sm"
         >
           有 {unbacked}{' '}
           条记录超过一周还没备份，数据只存在这台手机的浏览器里。去备份 →
         </button>
       )}
 
-      <nav className="mt-5 grid grid-cols-3 rounded-lg bg-neutral-200 p-1 text-sm">
+      <nav className="mt-6 grid grid-cols-3 gap-2">
         {(
           [
             ['timeline', '时间线'],
@@ -137,7 +139,8 @@ function App() {
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`rounded-md py-1.5 ${tab === key ? 'bg-white font-medium shadow-sm' : 'text-neutral-600'}`}
+            aria-pressed={tab === key}
+            className={`px-btn ${tab === key ? 'bg-ink text-paper' : ''}`}
           >
             {name}
           </button>
@@ -147,7 +150,9 @@ function App() {
       {records && (
         <Suspense
           fallback={
-            <p className="mt-6 text-center text-sm text-neutral-400">加载中…</p>
+            <p className="mt-6 text-center font-pixel text-[12px] text-ink-soft">
+              加载中…
+            </p>
           }
         >
           {tab === 'timeline' && <Timeline records={records} />}

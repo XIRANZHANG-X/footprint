@@ -22,29 +22,30 @@ export function AccessGate({ onResult }: { onResult: (s: AiState) => void }) {
   return (
     <form
       onSubmit={(e) => void onSubmit(e)}
-      className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900"
+      className="px-card mt-4 bg-sky p-3 text-sm"
     >
       <p>
         输入访问口令后可以使用语音识别和 AI 整理。只需输入一次，这台设备会记住。
       </p>
-      <div className="mt-2 flex gap-2">
+      <div className="mt-3 flex gap-3">
         <input
           type="password"
           value={token}
           onChange={(e) => setToken(e.target.value)}
           placeholder="访问口令"
           autoComplete="off"
-          className="min-w-0 flex-1 rounded-md border border-sky-200 bg-white px-2 py-1.5"
+          className="px-input min-w-0 flex-1"
         />
         <button
           type="submit"
           disabled={checking}
-          className="rounded-md bg-sky-700 px-3 py-1.5 font-medium text-white disabled:opacity-50"
+          aria-busy={checking}
+          className="px-btn bg-berry"
         >
           {checking ? '验证中…' : '确定'}
         </button>
       </div>
-      {wrong && <p className="mt-1 text-red-700">口令不对，请再检查一下。</p>}
+      {wrong && <p className="mt-2 text-cherry">口令不对，请再检查一下。</p>}
     </form>
   )
 }
