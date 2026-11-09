@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent } from 'react'
 import type { JournalRecord } from '../db.ts'
 import { exportBackup, importBackup } from '../lib/backup.ts'
 import { backupReminder } from '../lib/reminder.ts'
+import { saveFile } from '../lib/saveFile.ts'
 import { getLastBackupAt, requestPersistence } from '../lib/storage.ts'
 
 const timeFmt = new Intl.DateTimeFormat('zh-CN', {
@@ -9,15 +10,6 @@ const timeFmt = new Intl.DateTimeFormat('zh-CN', {
   timeStyle: 'short',
 })
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`
-
-function save(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
 
 export function BackupPanel({ records }: { records: JournalRecord[] }) {
   const [lastBackupAt, setLastBackupAt] = useState(getLastBackupAt)
@@ -41,7 +33,7 @@ export function BackupPanel({ records }: { records: JournalRecord[] }) {
     setMessage(undefined)
     try {
       const { blob, name } = await exportBackup()
-      save(blob, name)
+      await saveFile(blob, name)
       setLastBackupAt(getLastBackupAt())
       setMessage(
         `已导出 ${records.length} 条记录（${mb(blob.size)}），请把文件存到网盘或电脑上。`,

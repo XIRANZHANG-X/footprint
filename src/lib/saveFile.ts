@@ -1,0 +1,76 @@
+import { Capacitor, registerPlugin } from '@capacitor/core'
+
+// 把生成的文件（分享图、备份 zip）交给用户。
+// 网页版：用临时链接触发浏览器下载。
+// 安卓 App：WebView 不支持 <a download>，也没有网页的系统分享，
+// 所以先写到 App 的缓存目录，再打开系统分享面板，可以存到文件或发到微信（决策 0009）。
+// 分享图在 App 里还会先存进系统相册（shareImageNative）。
+// 只在按需加载的页面（备份页、分享预览）里使用，不会进首屏代码。
+
+export const isNativeApp = () => Capacitor.isNativePlatform()
+
+// 安卓端自己写的插件：android/app/src/main/java/.../GallerySaverPlugin.java
+const GallerySaver = registerPlugin<{
+  saveImage(options: { data: string; name: string }): Promise<{ uri: string }>
+}>('GallerySaver')
+
+export async function saveFile(blob: Blob, name: string): Promise<void> {
+  if (isNativeApp()) return shareNative(await toBase64(blob), name)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+// App 里点"分享"：先存进相册（相簿"足迹手账"），再打开分享面板。
+// 存相册失败不拦着分享，只把原因返回给界面显示。
+export async function shareImageNative(
+  blob: Blob,
+  name: string,
+): Promise<
+  { savedToGallery: true } | { savedToGallery: false; reason: string }
+> {
+  const data = await toBase64(blob)
+  let result: Awaited<ReturnType<typeof shareImageNative>>
+  try {
+    await GallerySaver.saveImage({ data, name })
+    result = { savedToGallery: true }
+  } catch (e) {
+    result = {
+      savedToGallery: false,
+      reason: e instanceof Error ? e.message : String(e),
+    }
+  }
+  await shareNative(data, name)
+  return result
+}
+
+async function shareNative(data: string, name: string) {
+  const [{ Filesystem, Directory }, { Share }] = await Promise.all([
+    import('@capacitor/filesystem'),
+    import('@capacitor/share'),
+  ])
+  const { uri } = await Filesystem.writeFile({
+    path: name,
+    data,
+    directory: Directory.Cache,
+  })
+  try {
+    await Share.share({ title: name, files: [uri] })
+  } catch (e) {
+    // 用户关掉分享面板也会抛错，这不算失败
+    if (!/cancel/i.test(e instanceof Error ? e.message : String(e))) throw e
+  }
+}
+
+// Filesystem 和相册插件都只接受 base64 字符串
+function toBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result).split(',')[1] ?? '')
+    r.onerror = () => reject(r.error ?? new Error('读取文件失败'))
+    r.readAsDataURL(blob)
+  })
+}

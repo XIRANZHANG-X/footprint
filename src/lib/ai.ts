@@ -10,6 +10,10 @@ import { getAccessToken, setAccessToken } from './storage.ts'
 
 export class ApiError extends Error {}
 
+// 接口地址：网页版为空，走同源的 /api；安卓 App 里页面来自本地，
+// 要访问线上的 Worker，地址在 .env.app 里配置（决策 0009）
+const API = `${String(import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '')}/api`
+
 // 带上访问口令（决策 0008）；没有口令时不加这个头
 function withToken(init: RequestInit = {}): RequestInit {
   const token = getAccessToken()
@@ -26,7 +30,7 @@ async function call<T>(
 ): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`/api${path}`, withToken(init))
+    res = await fetch(`${API}${path}`, withToken(init))
   } catch {
     throw new ApiError('连不上服务端')
   }
@@ -72,7 +76,7 @@ export type AiState = 'ready' | 'needsToken' | 'unavailable'
 export async function checkAi(): Promise<AiState> {
   let health: { aiConfigured?: boolean; accessRequired?: boolean }
   try {
-    health = (await (await fetch('/api/health')).json()) as typeof health
+    health = (await (await fetch(`${API}/health`)).json()) as typeof health
   } catch {
     return 'unavailable'
   }
@@ -80,7 +84,7 @@ export async function checkAi(): Promise<AiState> {
   if (!health.accessRequired) return 'ready'
   if (!getAccessToken()) return 'needsToken'
   try {
-    const r = await fetch('/api/auth/check', withToken())
+    const r = await fetch(`${API}/auth/check`, withToken())
     if (r.status === 401) {
       setAccessToken(null)
       return 'needsToken'

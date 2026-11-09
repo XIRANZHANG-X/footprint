@@ -110,3 +110,43 @@ describe('access token gate', () => {
     expect(await check.json()).toEqual({ ok: true })
   })
 })
+
+describe('CORS for the Android app', () => {
+  const preflight = (origin: string) =>
+    worker.request(
+      '/api/describe',
+      {
+        method: 'OPTIONS',
+        headers: {
+          Origin: origin,
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Headers': 'authorization,content-type',
+        },
+      },
+      {},
+    )
+
+  it('allows the Capacitor origin', async () => {
+    const res = await preflight('https://localhost')
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://localhost',
+    )
+    expect(res.headers.get('Access-Control-Allow-Headers')).toContain(
+      'Authorization',
+    )
+  })
+
+  it('does not allow other websites', async () => {
+    const res = await preflight('https://evil.example')
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull()
+  })
+
+  it('still requires the token for cross-origin calls', async () => {
+    const res = await worker.request(
+      '/api/geocode?lat=1&lng=1',
+      { headers: { Origin: 'https://localhost' } },
+      { ACCESS_TOKEN: TOKEN },
+    )
+    expect(res.status).toBe(401)
+  })
+})

@@ -1,5 +1,6 @@
 import { Hono, type MiddlewareHandler } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
+import { cors } from 'hono/cors'
 import { timingSafeEqual } from 'hono/utils/buffer'
 import {
   describeRequest,
@@ -29,6 +30,18 @@ export type AppOptions = {
 // 测试可以直接调用 app.request(path, init, env)，不用真的监听端口。
 export function createApp({ requireAccessToken }: AppOptions) {
   const app = new Hono<AppEnv>().basePath('/api')
+
+  // 安卓 App 的页面来自本地（https://localhost），访问线上接口属于跨域（决策 0009）。
+  // 只放行 App 自己的来源；放行跨域不等于免口令，受保护接口照样校验
+  app.use(
+    '*',
+    cors({
+      origin: ['https://localhost', 'capacitor://localhost'],
+      allowMethods: ['GET', 'POST'],
+      allowHeaders: ['Authorization', 'Content-Type'],
+      maxAge: 86400,
+    }),
+  )
 
   const aiConfigured = (env: Env) => Boolean(env.DASHSCOPE_API_KEY)
   const accessRequired = (env: Env) =>
