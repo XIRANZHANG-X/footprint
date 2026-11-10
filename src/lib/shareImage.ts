@@ -1,6 +1,7 @@
 import type { JournalRecord, StoredPhoto } from '../db.ts'
 import { coverCrop, photoSlots, wrapText } from './layout.ts'
 import { isStarCenter, STAR } from './pixelStar.ts'
+import { recordBody } from './record.ts'
 
 // 1080×1920 竖图（手机全屏比例），完全在本地生成，不经过服务端（决策 0002）
 // 风格同 App（决策 0010）：方格底纸、粗描边、实心硬阴影、马卡龙色标签
@@ -162,7 +163,7 @@ export async function renderShareImage(
   y += 8
 
   // 正文用系统字体：长段像素字读着累（决策 0010）
-  const body = content?.intro ?? record.note
+  const body = recordBody(record)
   const bodyFont = `400 40px ${SANS}`
   const lineHeight = 62
   const bodyBottom = SHARE_H - 240

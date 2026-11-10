@@ -1,7 +1,14 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { lazy, Suspense, useEffect, useState, type ChangeEvent } from 'react'
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react'
 import { Timeline } from './components/Timeline.tsx'
-import { db } from './db.ts'
+import { db, type Draft } from './db.ts'
 import { checkAi, type AiState } from './lib/ai.ts'
 import {
   getLastBackupAt,
@@ -9,12 +16,15 @@ import {
   saveErrorMessage,
 } from './lib/storage.ts'
 import { enrichRecord } from './lib/enrich.ts'
+import { clearDraft, loadDraft, saveDraft } from './lib/draft.ts'
 import {
+  createTextRecord,
   deleteRecord,
   importPhotos,
   restoreRecord,
   type DeletedRecord,
 } from './lib/importPhotos.ts'
+import { draftSummary } from './lib/record.ts'
 import { backupReminder } from './lib/reminder.ts'
 
 // 地图（Leaflet）体积较大，切到地图页签时再加载，记录页打开更快
@@ -42,7 +52,36 @@ const UNDO_MS = 6000
 function App() {
   const records = useLiveQuery(() => db.records.toArray())
   const [tab, setTab] = useState<'timeline' | 'map' | 'backup'>('timeline')
-  const [picked, setPicked] = useState<File[] | null>(null)
+  // 正在写的新记录：选好的照片（"只写几句"时为空数组）和开头的文字
+  const [picked, setPicked] = useState<{ files: File[]; note: string } | null>(
+    null,
+  )
+  // 上次没写完的草稿，等用户决定继续还是丢弃（决策 0013）
+  const [draft, setDraft] = useState<Draft | null>(null)
+  useEffect(() => {
+    void loadDraft().then(setDraft)
+  }, [])
+  // 打字时不必每个字都写一次数据库，停下来一会儿再存
+  const draftTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(draftTimer.current), [])
+
+  function startComposing(files: File[], note = '') {
+    setMessage(undefined)
+    setDraft(null)
+    setPicked({ files, note })
+    void saveDraft(files, note)
+  }
+
+  function stopComposing() {
+    clearTimeout(draftTimer.current)
+    setPicked(null)
+    void clearDraft()
+  }
+
+  function onNoteChange(files: File[], note: string) {
+    clearTimeout(draftTimer.current)
+    draftTimer.current = setTimeout(() => void saveDraft(files, note), 400)
+  }
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string>()
   const [aiState, setAiState] = useState<AiState>('unavailable')
@@ -87,22 +126,30 @@ function App() {
     const files = Array.from(e.target.files ?? [])
     e.target.value = '' // 允许再次选同一批照片
     if (files.length === 0) return
-    setMessage(undefined)
-    setPicked(files)
+    startComposing(files)
   }
 
-  async function onDone(note: string) {
+  async function onDone(note: string, body: 'own' | 'ai') {
     if (!picked) return
     setBusy(true)
     try {
-      const r = await importPhotos(picked, note)
-      const parts = [`已保存 ${r.imported} 张`]
-      if (r.failed.length)
-        parts.push(`${r.failed.length} 张无法处理：${r.failed.join('、')}`)
-      setMessage(parts.join('；'))
-      setPicked(null)
-      // 先存好再整理：AI 慢或失败都不会丢记录
-      if (r.recordId && aiReady) void enrichRecord(r.recordId)
+      let recordId: string | null
+      if (picked.files.length === 0) {
+        recordId = await createTextRecord(note)
+        setMessage('已保存')
+      } else {
+        const r = await importPhotos(picked.files, note)
+        recordId = r.recordId
+        const parts = [`已保存 ${r.imported} 张`]
+        if (r.failed.length)
+          parts.push(`${r.failed.length} 张无法处理：${r.failed.join('、')}`)
+        setMessage(parts.join('；'))
+      }
+      stopComposing()
+      // 先存好再整理：AI 慢或失败都不会丢记录。
+      // 直接保存：正文用自己写的，AI 只补标题、类别、标签；让 AI 整理：AI 另写一版（决策 0012）
+      if (recordId && aiReady)
+        void enrichRecord(recordId, { mode: body === 'own' ? 'meta' : 'full' })
       // 有了第一批数据后申请持久化存储；浏览器拒绝也没关系，备份页可以再申请
       void requestPersistence()
     } catch (e) {
@@ -125,24 +172,61 @@ function App() {
         ) : (
           <Suspense fallback={null}>
             <Composer
-              files={picked}
+              files={picked.files}
               aiReady={aiReady}
-              onDone={(note) => void onDone(note)}
-              onCancel={() => setPicked(null)}
+              initialNote={picked.note}
+              onNoteChange={(note) => onNoteChange(picked.files, note)}
+              onDone={(note, body) => void onDone(note, body)}
+              onCancel={stopComposing}
             />
           </Suspense>
         )
       ) : (
-        <label className="px-btn mt-5 flex min-h-12 w-full bg-berry text-[16px]">
-          ＋ 选照片，新建一条记录
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={onPick}
-          />
-        </label>
+        <>
+          <div className="mt-5 flex gap-3">
+            <label className="px-btn flex min-h-12 flex-1 bg-berry text-[16px]">
+              ＋ 选照片
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={onPick}
+              />
+            </label>
+            <button
+              type="button"
+              className="px-btn min-h-12"
+              onClick={() => startComposing([])}
+            >
+              只写几句
+            </button>
+          </div>
+          {draft && (
+            <div className="px-card mt-4 bg-lemon px-3 py-2 text-sm">
+              <p>上次有一条没写完：{draftSummary(draft)}</p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  className="px-btn px-btn-sm bg-berry"
+                  onClick={() => startComposing(draft.files, draft.note)}
+                >
+                  继续写
+                </button>
+                <button
+                  type="button"
+                  className="px-btn px-btn-sm"
+                  onClick={() => {
+                    setDraft(null)
+                    void clearDraft()
+                  }}
+                >
+                  丢弃
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
       {message && <p className="mt-3 text-sm text-ink-soft">{message}</p>}
 

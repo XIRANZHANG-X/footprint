@@ -20,23 +20,40 @@ function Preview({ file }: { file: File }) {
 
 type Phase = 'idle' | 'recording' | 'transcribing'
 
-// "选照片 → 说一句话 → 完成"里的后两步（决策 0003）
+// "选照片 → 说一句话 → 保存"里的后两步（决策 0003）；没有照片时就是"只写几句"（决策 0013）
 export function Composer({
   files,
   aiReady,
+  initialNote = '',
+  onNoteChange,
   onDone,
   onCancel,
 }: {
-  files: File[]
+  files: File[] // 空数组表示"只写几句"，没有照片
   aiReady: boolean
-  onDone: (note: string) => void
+  initialNote?: string // 从草稿继续时带回来的文字
+  onNoteChange?: (note: string) => void // 用来自动存草稿
+  // own：直接保存，正文用自己写的；ai：让 AI 写一版（决策 0012 第 3 条）
+  onDone: (note: string, body: 'own' | 'ai') => void
   onCancel: () => void
 }) {
-  const [note, setNote] = useState('')
+  const [note, setNoteState] = useState(initialNote)
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string>()
   const [seconds, setSeconds] = useState(0)
   const recording = useRef<Recording | null>(null)
+  const textOnly = files.length === 0
+  const idle = phase === 'idle'
+  // 只写几句的记录没有照片，文字就不能再空着
+  const canSave = idle && (!textOnly || note.trim() !== '')
+
+  function setNote(next: string | ((prev: string) => string)) {
+    setNoteState((prev) => {
+      const value = typeof next === 'function' ? next(prev) : next
+      onNoteChange?.(value)
+      return value
+    })
+  }
 
   useEffect(() => {
     if (phase !== 'recording') return
@@ -81,11 +98,15 @@ export function Composer({
 
   return (
     <section className="px-card mt-5 p-3">
-      <div className="grid grid-cols-4 gap-2">
-        {files.map((f, i) => (
-          <Preview key={i} file={f} />
-        ))}
-      </div>
+      {textOnly ? (
+        <p className="px-title text-[16px]">只写几句</p>
+      ) : (
+        <div className="grid grid-cols-4 gap-2">
+          {files.map((f, i) => (
+            <Preview key={i} file={f} />
+          ))}
+        </div>
+      )}
 
       {aiReady && (
         <button
@@ -116,18 +137,21 @@ export function Composer({
       <textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        rows={3}
+        rows={textOnly ? 5 : 3}
         placeholder={
           aiReady
             ? '识别结果会出现在这里，可以修改；也可以直接打字'
-            : '写一句话（可选）'
+            : textOnly
+              ? '写几句'
+              : '写一句话（可选）'
         }
         className="px-input mt-3"
       />
       {error && <p className="mt-1 text-xs text-cherry">{error}</p>}
       {!aiReady && (
         <p className="mt-1 text-xs text-ink-soft">
-          服务端没有配置 AI key，本次只保存照片和文字。
+          现在用不了 AI，这次只保存{textOnly ? '' : '照片和'}
+          文字，之后可以再补。
         </p>
       )}
 
@@ -135,20 +159,36 @@ export function Composer({
         <button
           type="button"
           onClick={onCancel}
-          disabled={phase !== 'idle'}
-          className="px-btn flex-1"
+          disabled={!idle}
+          className="px-btn"
         >
           取消
         </button>
         <button
           type="button"
-          onClick={() => onDone(note)}
-          disabled={phase !== 'idle'}
-          className="px-btn flex-[2] bg-berry"
+          onClick={() => onDone(note, 'own')}
+          disabled={!canSave}
+          className={`px-btn flex-1 ${aiReady ? '' : 'bg-berry'}`}
         >
-          完成
+          直接保存
         </button>
+        {aiReady && (
+          <button
+            type="button"
+            onClick={() => onDone(note, 'ai')}
+            disabled={!canSave}
+            className="px-btn flex-1 bg-berry"
+          >
+            让 AI 整理
+          </button>
+        )}
       </div>
+      {aiReady && (
+        <p className="mt-2 text-xs text-ink-soft">
+          直接保存：正文用你写的，AI 只补标题和标签。让 AI 整理：AI
+          另写一版，和你写的放在一起让你选。
+        </p>
+      )}
     </section>
   )
 }

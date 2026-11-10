@@ -56,7 +56,8 @@ export async function enrichRecord(
     const draft = await describe({
       images: shrunk.images,
       note: record.note,
-      takenAt: record.timeSource === 'exif' ? record.takenAt : undefined,
+      // 文件时间不可靠，不告诉模型；拍摄时间和用户写下的时间可以
+      takenAt: record.timeSource === 'file' ? undefined : record.takenAt,
       placeName: place.placeName,
       mode,
     })
@@ -87,9 +88,12 @@ export async function enrichRecord(
               overwrite || !record.content
                 ? pickContent(draft)
                 : record.content,
-            // 第一次整理或重新生成后，显示的是 AI 这一版
             ...(overwrite || !record.content
-              ? { bodySource: 'ai' as const }
+              ? record.note.trim()
+                ? // 用户自己也写了内容：两版并排，等用户选一版（决策 0012 第 3 条）
+                  { choosing: true }
+                : // 用户什么都没写：只有 AI 这一版
+                  { bodySource: 'ai' as const, choosing: false }
               : {}),
           }),
     })
@@ -113,12 +117,64 @@ function pickContent(d: RecordContent): RecordContent {
   return { title: d.title, category: d.category, intro: d.intro, tags: d.tags }
 }
 
-// 保存用户改过的正文，同时记下"AI 原稿 → 改后的版本"供以后学习（决策 0012）
-export function saveContent(recordId: string, content: RecordContent) {
+// 保存编辑页的内容，同时记下"AI 原稿 → 改后的版本"供以后学习（决策 0012）。
+// body 是编辑页里的正文：记录用的是自己写的那一版时改的是原话，否则改的是 AI 的正文
+export function saveContent(
+  recordId: string,
+  content: RecordContent,
+  body: string,
+) {
   return db.transaction('rw', db.records, db.edits, async () => {
     const record = await db.records.get(recordId)
     if (!record) return
-    await db.records.update(recordId, { content })
-    if (record.aiDraft) await logEdit(recordId, record.aiDraft, content)
+    if (record.bodySource === 'own') {
+      // AI 写的那一版（content.intro）原样留着，以后还能换回去
+      await db.records.update(recordId, {
+        note: body,
+        content: { ...content, intro: record.content?.intro ?? '' },
+      })
+      return
+    }
+    const next = { ...content, intro: body }
+    await db.records.update(recordId, { content: next })
+    if (record.aiDraft) await logEdit(recordId, record.aiDraft, next)
+  })
+}
+
+// 在"我写的"和"AI 写的"之间选一版当正文（决策 0012 第 3 条）。text 是用户在那一版上改完的文字。
+// 没选中的那一版不动，之后可以换回来
+export function chooseBody(
+  recordId: string,
+  source: 'own' | 'ai',
+  text: string,
+) {
+  return db.transaction('rw', db.records, db.edits, async () => {
+    const record = await db.records.get(recordId)
+    if (!record) return
+    const content = record.content
+    if (source === 'own') {
+      await db.records.update(recordId, {
+        note: text,
+        bodySource: 'own',
+        choosing: false,
+      })
+      // 放弃 AI 版本是最强的"不满意"信号，记下来
+      if (record.aiDraft && content)
+        await logEdit(
+          recordId,
+          record.aiDraft,
+          { ...content, intro: text },
+          'choseOwn',
+        )
+      return
+    }
+    if (!content) return
+    const next = { ...content, intro: text }
+    await db.records.update(recordId, {
+      content: next,
+      bodySource: 'ai',
+      choosing: false,
+    })
+    if (record.aiDraft) await logEdit(recordId, record.aiDraft, next)
   })
 }

@@ -1,5 +1,4 @@
 import { db, type JournalRecord, type StoredPhoto } from '../db.ts'
-import { readPhotoMeta } from './exif.ts'
 import { compressPhoto } from './image.ts'
 import { summarizeRecord } from './record.ts'
 
@@ -13,6 +12,8 @@ export async function importPhotos(
   files: File[],
   note = '',
 ): Promise<ImportResult> {
+  // 读照片信息的库（exifr）体积不小，只有导入照片时才用得上，到这里再加载，首屏更快
+  const { readPhotoMeta } = await import('./exif.ts')
   const recordId = crypto.randomUUID()
   const photos: StoredPhoto[] = []
   const failed: string[] = []
@@ -57,6 +58,32 @@ export async function importPhotos(
     })
   })
   return { recordId, imported: photos.length, failed }
+}
+
+// 只写文字、没有照片的记录（决策 0013 第 4 条）：时间是写下它的这一刻，地点先空着
+export async function createTextRecord(note: string): Promise<string> {
+  const id = crypto.randomUUID()
+  const now = Date.now()
+  await db.records.add({
+    id,
+    createdAt: now,
+    takenAt: now,
+    timeSource: 'manual',
+    location: null,
+    locationStatus: 'pending',
+    photoCount: 0,
+    note: note.trim(),
+    placeName: null,
+    aiDraft: null,
+    content: null,
+    aiStatus: 'none',
+    aiError: null,
+    tripBreak: null,
+    bodySource: 'own',
+    placeGuess: null,
+    aiTimings: null,
+  })
+  return id
 }
 
 // 删除时顺手把删掉的内容交还给调用方，界面用它实现"撤销"（决策 0011）。

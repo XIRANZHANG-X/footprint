@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { PhotoMeta } from './photoMeta.ts'
-import { formatTimings, summarizeRecord } from './record.ts'
+import {
+  draftSummary,
+  formatTimings,
+  hasBothVersions,
+  recordBody,
+  summarizeRecord,
+} from './record.ts'
 
 const here = { lat: 31.2, lng: 121.5 }
 const there = { lat: 30.3, lng: 120.2 }
@@ -69,5 +75,60 @@ describe('formatTimings', () => {
         totalMs: 2300,
       }),
     ).toBe('整理用时 2.3 秒（缩图 0.3 秒 · 模型 2.0 秒）')
+  })
+})
+
+describe('recordBody', () => {
+  const ai = { intro: 'AI 写的正文' }
+
+  it('选了自己写的就显示原话，哪怕 AI 也写了一版', () => {
+    expect(recordBody({ note: '我写的', bodySource: 'own', content: ai })).toBe(
+      '我写的',
+    )
+  })
+
+  it('选了 AI 版就显示 AI 的正文', () => {
+    expect(recordBody({ note: '我写的', bodySource: 'ai', content: ai })).toBe(
+      'AI 写的正文',
+    )
+  })
+
+  it('选了 AI 版但 AI 没有正文时退回自己写的', () => {
+    expect(
+      recordBody({ note: '我写的', bodySource: 'ai', content: null }),
+    ).toBe('我写的')
+    expect(
+      recordBody({ note: '我写的', bodySource: 'ai', content: { intro: '' } }),
+    ).toBe('我写的')
+  })
+})
+
+describe('hasBothVersions', () => {
+  it('两版都有内容才算', () => {
+    const both = {
+      note: '我写的',
+      bodySource: 'own' as const,
+      content: { intro: 'AI' },
+    }
+    expect(hasBothVersions(both)).toBe(true)
+    expect(hasBothVersions({ ...both, note: '  ' })).toBe(false)
+    expect(hasBothVersions({ ...both, content: { intro: '' } })).toBe(false)
+    expect(hasBothVersions({ ...both, content: null })).toBe(false)
+  })
+})
+
+describe('draftSummary', () => {
+  it('照片数和文字开头都有', () => {
+    expect(
+      draftSummary({
+        files: [1, 2, 3],
+        note: '排了一小时的面，汤很浓，下次还来',
+      }),
+    ).toBe('3 张照片 · 排了一小时的面，汤很浓，…')
+  })
+
+  it('只有照片或只有文字', () => {
+    expect(draftSummary({ files: [1], note: ' ' })).toBe('1 张照片')
+    expect(draftSummary({ files: [], note: '江边走走' })).toBe('江边走走')
   })
 })

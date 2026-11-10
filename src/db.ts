@@ -25,7 +25,8 @@ export type JournalRecord = {
   id: string
   createdAt: number
   takenAt: number
-  timeSource: TimeSource
+  // manual：只写文字的记录没有照片，时间是用户写下它的那一刻（决策 0013 第 4 条）
+  timeSource: TimeSource | 'manual'
   location: LatLng | null
   locationStatus: LocationStatus
   photoCount: number
@@ -42,6 +43,9 @@ export type JournalRecord = {
   // AI 从照片里猜的地点。只是一个候选，用户点了才用（决策 0013 第 2 条）
   placeGuess: string | null
   aiTimings: AiTimings | null
+  // AI 刚写完一版、而用户自己也写了内容时为 true：卡片上两版并排，等用户选一版（决策 0012 第 3 条）。
+  // 不建索引的可选字段，旧记录里没有它，等同于 false
+  choosing?: boolean
 }
 
 // 修改记录（决策 0012 第 1 条）："AI 原稿 → 用户改后的版本"，学习用户写作习惯的原料。
@@ -56,6 +60,15 @@ export type EditEntry = {
   final: RecordContent
   changedChars: number
   draftChars: number
+}
+
+// 写到一半的新记录（决策 0013）：选好的照片和已写的文字。只有一份，id 固定为 'current'。
+// 单独一张表而不放进 settings：里面有照片原文件，不能进备份
+export type Draft = {
+  id: 'current'
+  files: File[]
+  note: string
+  savedAt: number
 }
 
 // 零散的设置（偏好说明等），一个键一行
@@ -80,6 +93,7 @@ export const db = new Dexie('footprint-journal') as Dexie & {
   photos: EntityTable<StoredPhoto, 'id'>
   edits: EntityTable<EditEntry, 'id'>
   settings: EntityTable<Setting, 'key'>
+  drafts: EntityTable<Draft, 'id'>
 }
 
 db.version(1).stores({
@@ -136,3 +150,12 @@ db.version(4)
         r.aiTimings ??= null
       }),
   )
+
+// v5（第二档 2B）：草稿表。只加表，旧数据不用动。
+db.version(5).stores({
+  records: 'id, takenAt',
+  photos: 'id, recordId',
+  edits: 'id, recordId, at',
+  settings: 'key',
+  drafts: 'id',
+})

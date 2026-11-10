@@ -43,3 +43,37 @@ export function formatTimings(t: {
   ]
   return `整理用时 ${sec(t.totalMs)}（${parts.join(' · ')}）`
 }
+
+type BodyFields = {
+  note: string
+  bodySource: 'own' | 'ai'
+  content: { intro: string } | null
+}
+
+// 卡片和分享图上显示的正文（决策 0012）：用户选了哪一版就显示哪一版；
+// 选了 AI 版但 AI 还没写出正文时，退回用户自己写的
+export function recordBody(r: BodyFields): string {
+  if (r.bodySource === 'own') return r.note
+  return r.content?.intro || r.note
+}
+
+// 自己写的和 AI 写的两版都在，才谈得上"换成另一版"
+export function hasBothVersions(r: BodyFields): boolean {
+  return r.note.trim() !== '' && (r.content?.intro ?? '').trim() !== ''
+}
+
+// 草稿提示里的一句话摘要，例如"3 张照片 · 排了一小时的面…"
+export function draftSummary(d: { files: unknown[]; note: string }): string {
+  const text = d.note.trim()
+  const chars = Array.from(text)
+  return [
+    d.files.length > 0 ? `${d.files.length} 张照片` : null,
+    text
+      ? chars.length > 12
+        ? `${chars.slice(0, 12).join('')}…`
+        : text
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
