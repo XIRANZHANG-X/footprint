@@ -25,6 +25,7 @@ import {
   type DeletedRecord,
 } from './lib/importPhotos.ts'
 import { proposePreferencesIfDue } from './lib/preferences.ts'
+import type { LatLng } from './lib/photoMeta.ts'
 import { draftSummary } from './lib/record.ts'
 import { backupReminder } from './lib/reminder.ts'
 
@@ -151,13 +152,17 @@ function App() {
     startComposing(files)
   }
 
-  async function onDone(note: string, body: 'own' | 'ai') {
+  async function onDone(
+    note: string,
+    body: 'own' | 'ai',
+    location: LatLng | null,
+  ) {
     if (!picked) return
     setBusy(true)
     try {
       let recordId: string | null
       if (picked.files.length === 0) {
-        recordId = await createTextRecord(note)
+        recordId = await createTextRecord(note, location)
         setMessage('已保存')
       } else {
         const r = await importPhotos(picked.files, note)
@@ -198,7 +203,9 @@ function App() {
               aiReady={aiReady}
               initialNote={picked.note}
               onNoteChange={(note) => onNoteChange(picked.files, note)}
-              onDone={(note, body) => void onDone(note, body)}
+              onDone={(note, body, location) =>
+                void onDone(note, body, location)
+              }
               onCancel={stopComposing}
             />
           </Suspense>

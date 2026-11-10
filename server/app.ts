@@ -5,6 +5,7 @@ import { timingSafeEqual } from 'hono/utils/buffer'
 import {
   describeRequest,
   description,
+  MAX_PLACE_QUERY_CHARS,
   MAX_PREFERENCES_CHARS,
   suggestRequest,
   transcribeRequest,
@@ -16,7 +17,7 @@ import {
   UpstreamError,
 } from './dashscope.ts'
 import type { Env } from './env.ts'
-import { reverseGeocode } from './geocode.ts'
+import { reverseGeocode, searchPlaces } from './geocode.ts'
 import {
   describeSystem,
   describeUserText,
@@ -183,6 +184,14 @@ export function createApp({ requireAccessToken }: AppOptions) {
     if (!Number.isFinite(lat) || !Number.isFinite(lng))
       return c.json({ error: '缺少坐标' }, 400)
     return c.json(await reverseGeocode(lat, lng))
+  })
+
+  // 按地名查坐标，列出候选让用户选（决策 0013 第 3 条）。同样走 Nominatim，同样要口令
+  app.get('/geocode/search', checkAccess, async (c) => {
+    const q = (c.req.query('q') ?? '').trim()
+    if (!q || q.length > MAX_PLACE_QUERY_CHARS)
+      return c.json({ error: '地名不能为空，也不能太长' }, 400)
+    return c.json({ results: await searchPlaces(q) })
   })
 
   app.onError((err, c) => {

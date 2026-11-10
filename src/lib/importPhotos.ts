@@ -1,5 +1,6 @@
 import { db, type JournalRecord, type StoredPhoto } from '../db.ts'
 import { compressPhoto } from './image.ts'
+import type { LatLng } from './photoMeta.ts'
 import { summarizeRecord } from './record.ts'
 
 export type ImportResult = {
@@ -96,7 +97,11 @@ export async function changePhotos(
 }
 
 // 只写文字、没有照片的记录（决策 0013 第 4 条）：时间是写下它的这一刻，地点先空着
-export async function createTextRecord(note: string): Promise<string> {
+// location：用户点了"用当前位置"时取到的坐标
+export async function createTextRecord(
+  note: string,
+  location: LatLng | null = null,
+): Promise<string> {
   const id = crypto.randomUUID()
   const now = Date.now()
   await db.records.add({
@@ -104,8 +109,8 @@ export async function createTextRecord(note: string): Promise<string> {
     createdAt: now,
     takenAt: now,
     timeSource: 'manual',
-    location: null,
-    locationStatus: 'pending',
+    location,
+    locationStatus: location ? 'gps' : 'pending',
     photoCount: 0,
     note: note.trim(),
     placeName: null,

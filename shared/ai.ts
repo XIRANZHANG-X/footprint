@@ -70,6 +70,20 @@ export const geocodeResponse = z.object({
 })
 export type Geocode = z.infer<typeof geocodeResponse>
 
+// 按地名查坐标（决策 0013 第 3 条）：最多 3 个候选，带上所在城市，让用户自己选
+export const MAX_PLACE_QUERY_CHARS = 60
+export const MAX_PLACE_CANDIDATES = 3
+export const placeCandidate = z.object({
+  name: z.string().nullable(),
+  address: z.string().nullable(),
+  lat: z.number(),
+  lng: z.number(),
+})
+export type PlaceCandidate = z.infer<typeof placeCandidate>
+export const placeSearchResponse = z.object({
+  results: z.array(placeCandidate),
+})
+
 // 让模型根据最近的修改，提出一版新的偏好说明（决策 0012 第 6 条）
 export const suggestRequest = z.object({
   current: z.string().max(MAX_PREFERENCES_CHARS).default(''),

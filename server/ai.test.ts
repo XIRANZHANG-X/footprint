@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.ts'
 import type { Env } from './env.ts'
 import { extractJsonObject } from './dashscope.ts'
-import { cacheKey, formatNominatim } from './geocode.ts'
+import { cacheKey, formatCandidates, formatNominatim } from './geocode.ts'
 
 const IMG = 'data:image/jpeg;base64,AAAA'
 const WAV = 'data:audio/wav;base64,AAAA'
@@ -273,5 +273,66 @@ describe('geocode helpers', () => {
 
   it('rounds coordinates to about 11 m for the cache key', () => {
     expect(cacheKey(31.240012, 121.489987)).toBe(cacheKey(31.24, 121.49))
+  })
+})
+
+describe('place search', () => {
+  it('turns search results into at most 3 candidates with coordinates', () => {
+    const hit = (name: string, lat: string) => ({
+      name,
+      lat,
+      lon: '121.49',
+      address: { city: '上海市', city_district: '黄浦区' },
+    })
+    const list = formatCandidates([
+      hit('外滩', '31.24'),
+      hit('外滩源', '31.25'),
+      hit('外滩美术馆', '31.26'),
+      hit('外滩隧道', '31.27'),
+    ])
+    expect(list).toHaveLength(3)
+    expect(list[0]).toEqual({
+      name: '外滩',
+      address: '上海市 · 黄浦区',
+      lat: 31.24,
+      lng: 121.49,
+    })
+  })
+
+  it('drops results without usable coordinates, and tolerates a non-list reply', () => {
+    expect(formatCandidates([{ name: 'x', lat: 'abc', lon: '1' }])).toEqual([])
+    expect(formatCandidates({ error: 'x' })).toEqual([])
+  })
+
+  it('rejects an empty or overlong query without calling Nominatim', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    vi.stubGlobal('fetch', fetchMock)
+    const get = (q: string) =>
+      app.request(`/api/geocode/search?q=${encodeURIComponent(q)}`, {}, ENV)
+    expect((await get('  ')).status).toBe(400)
+    expect((await get('长'.repeat(61))).status).toBe(400)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('returns the candidates from Nominatim', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json([
+        {
+          name: '西湖',
+          lat: '30.24',
+          lon: '120.15',
+          address: { city: '杭州市' },
+        },
+      ]),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await app.request('/api/geocode/search?q=西湖测试', {}, ENV)
+    expect(await res.json()).toEqual({
+      results: [{ name: '西湖', address: '杭州市', lat: 30.24, lng: 120.15 }],
+    })
+    const url = new URL(String(fetchMock.mock.calls[0][0]))
+    expect(url.pathname).toBe('/search')
+    expect(url.searchParams.get('q')).toBe('西湖测试')
+    expect(url.searchParams.get('limit')).toBe('3')
   })
 })

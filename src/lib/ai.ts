@@ -1,6 +1,7 @@
 import {
   description,
   geocodeResponse,
+  placeSearchResponse,
   suggestResponse,
   transcribeResponse,
   type DescribeRequest,
@@ -82,6 +83,16 @@ export async function suggestPreferences(
 
 export function geocode(lat: number, lng: number) {
   return call(`/geocode?lat=${lat}&lng=${lng}`, geocodeResponse)
+}
+
+// 按地名查坐标，最多 3 个候选（决策 0013 第 3 条）
+export async function searchPlaces(query: string) {
+  return (
+    await call(
+      `/geocode/search?q=${encodeURIComponent(query.trim())}`,
+      placeSearchResponse,
+    )
+  ).results
 }
 
 // ready：可以用 AI；needsToken：服务端要求口令，但本机没有或不对；

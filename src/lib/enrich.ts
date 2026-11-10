@@ -76,7 +76,11 @@ export async function enrichRecord(
       tags: draft.tags,
     }
     await db.records.update(recordId, {
-      placeName: place.placeName ?? draft.placeGuess,
+      // 只有这次真的按 GPS 查到了地名才写。AI 从照片里猜的地点不再当成真的，
+      // 只存成一个候选，用户点了才用（决策 0013 第 2 条）
+      ...(place.ms !== null && place.placeName
+        ? { placeName: place.placeName }
+        : {}),
       placeGuess: draft.placeGuess,
       aiStatus: 'done',
       photosChanged: false,

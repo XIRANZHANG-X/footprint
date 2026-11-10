@@ -20,6 +20,26 @@ export async function setRecordLocation(recordId: string, location: LatLng) {
   }
 }
 
+// 用户从候选里选了一个地点（当天去过的地方，或按地名查到的结果）：地名和坐标一起写上，记录就上地图了。
+// placeName 为 null 时只有坐标，走"在地图上点一下"的同一条路去查地名
+export function applyPlace(
+  recordId: string,
+  place: { location: LatLng; placeName: string | null },
+) {
+  if (place.placeName === null)
+    return setRecordLocation(recordId, place.location)
+  return db.records.update(recordId, {
+    location: place.location,
+    locationStatus: 'manual',
+    placeName: place.placeName,
+  })
+}
+
+// 查不到坐标时只存地名文字，记录留在"待定位"里（决策 0013 第 3 条）
+export function setPlaceNameOnly(recordId: string, name: string) {
+  return db.records.update(recordId, { placeName: name.trim() || null })
+}
+
 // 编辑页里改时间、改地名（决策 0013）。地名只改文字，坐标不动；清空地名后卡片显示经纬度或"待定位"
 export function setRecordDetails(
   recordId: string,

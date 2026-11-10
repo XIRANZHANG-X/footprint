@@ -39,6 +39,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 录一句话（决策 0003）：WebView 里的 getUserMedia 需要麦克风权限，首次录音时系统会弹窗 -->
+    <!-- "只写几句"里的"用当前位置"按钮（决策 0013 第 4 条）：点了才申请，不在后台取位置 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 </manifest>

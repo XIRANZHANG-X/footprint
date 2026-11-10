@@ -18,6 +18,7 @@ import {
 } from '../lib/record.ts'
 import { setRecordDetails } from '../lib/recordEdits.ts'
 import { saveErrorMessage } from '../lib/storage.ts'
+import { PlacePicker } from './PlacePicker.tsx'
 import { useObjectUrl } from './useObjectUrl.ts'
 
 // 分享图只在点击时才需要，按需加载
@@ -335,6 +336,7 @@ export function RecordCard({
   const [editing, setEditing] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [viewing, setViewing] = useState<number | null>(null)
+  const [placing, setPlacing] = useState(false)
   const content = record.content
   const busy = record.aiStatus === 'pending'
   const choosing = record.choosing === true && !busy
@@ -371,16 +373,29 @@ export function RecordCard({
           <p className="mt-2 flex flex-wrap gap-1.5">
             {record.placeName ? (
               <span className="px-tag bg-sky">{record.placeName}</span>
-            ) : record.location ? (
-              <span className="px-tag bg-sky">
-                {record.location.lat.toFixed(4)},{' '}
-                {record.location.lng.toFixed(4)}
-              </span>
             ) : (
+              record.location && (
+                <span className="px-tag bg-sky">
+                  {record.location.lat.toFixed(4)},{' '}
+                  {record.location.lng.toFixed(4)}
+                </span>
+              )
+            )}
+            {/* 只有地名文字、没有坐标的记录也算待定位：它还不在地图上 */}
+            {!record.location && (
               <span className="px-tag bg-lemon">待定位</span>
             )}
             {content && <span className="px-tag">{content.category}</span>}
           </p>
+          {!record.location && !editing && !placing && (
+            <button
+              type="button"
+              className="px-btn px-btn-sm mt-2 bg-lemon"
+              onClick={() => setPlacing(true)}
+            >
+              补地点
+            </button>
+          )}
         </div>
         <button
           type="button"
@@ -391,6 +406,10 @@ export function RecordCard({
           删除
         </button>
       </header>
+
+      {placing && !editing && !record.location && (
+        <PlacePicker record={record} onClose={() => setPlacing(false)} />
+      )}
 
       {!editing && photos && photos.length > 0 && (
         <div className="mt-3 grid grid-cols-3 gap-2">

@@ -5,6 +5,7 @@ import {
   startRecording,
   type Recording,
 } from '../lib/recorder.ts'
+import type { LatLng } from '../lib/photoMeta.ts'
 import { useObjectUrl } from './useObjectUrl.ts'
 
 function Preview({ file }: { file: File }) {
@@ -34,9 +35,12 @@ export function Composer({
   initialNote?: string // 从草稿继续时带回来的文字
   onNoteChange?: (note: string) => void // 用来自动存草稿
   // own：直接保存，正文用自己写的；ai：让 AI 写一版（决策 0012 第 3 条）
-  onDone: (note: string, body: 'own' | 'ai') => void
+  // location：只写几句时用户点"用当前位置"取到的坐标，没点就是 null
+  onDone: (note: string, body: 'own' | 'ai', location: LatLng | null) => void
   onCancel: () => void
 }) {
+  const [here, setHere] = useState<LatLng | null>(null)
+  const [locating, setLocating] = useState(false)
   const [note, setNoteState] = useState(initialNote)
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string>()
@@ -80,6 +84,31 @@ export function Composer({
     } finally {
       setPhase('idle')
     }
+  }
+
+  // 点了才申请定位权限、才取位置（决策 0013 第 4 条）；不在后台取，也不自动取
+  function takeCurrentLocation() {
+    setError(undefined)
+    if (!('geolocation' in navigator)) {
+      setError('这台设备取不到位置，保存后可以在卡片上补地点。')
+      return
+    }
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setHere({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setLocating(false)
+      },
+      (err) => {
+        setError(
+          err.code === err.PERMISSION_DENIED
+            ? '没有定位权限：请在系统设置里允许，或者保存后在卡片上补地点。'
+            : '没取到位置（信号不好或超时），可以再试一次，或者保存后在卡片上补地点。',
+        )
+        setLocating(false)
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
+    )
   }
 
   async function toggleRecord() {
@@ -147,6 +176,33 @@ export function Composer({
         }
         className="px-input mt-3"
       />
+      {textOnly && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          {here ? (
+            <>
+              <span className="px-tag bg-sky">
+                已取到位置 {here.lat.toFixed(4)}, {here.lng.toFixed(4)}
+              </span>
+              <button
+                type="button"
+                className="px-btn px-btn-sm"
+                onClick={() => setHere(null)}
+              >
+                不用了
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="px-btn px-btn-sm bg-sky"
+              disabled={locating}
+              onClick={takeCurrentLocation}
+            >
+              {locating ? '定位中…' : '用当前位置'}
+            </button>
+          )}
+        </div>
+      )}
       {error && <p className="mt-1 text-xs text-cherry">{error}</p>}
       {!aiReady && (
         <p className="mt-1 text-xs text-ink-soft">
@@ -166,7 +222,7 @@ export function Composer({
         </button>
         <button
           type="button"
-          onClick={() => onDone(note, 'own')}
+          onClick={() => onDone(note, 'own', here)}
           disabled={!canSave}
           className={`px-btn flex-1 ${aiReady ? '' : 'bg-berry'}`}
         >
@@ -175,7 +231,7 @@ export function Composer({
         {aiReady && (
           <button
             type="button"
-            onClick={() => onDone(note, 'ai')}
+            onClick={() => onDone(note, 'ai', here)}
             disabled={!canSave}
             className="px-btn flex-1 bg-berry"
           >
