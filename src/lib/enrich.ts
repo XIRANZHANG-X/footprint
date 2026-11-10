@@ -51,6 +51,14 @@ export async function enrichRecord(recordId: string, overwrite = false) {
   }
 }
 
+// App 启动时调用一次：上次整理到一半就被关掉的记录，后台任务已经不在了，
+// 状态却还停在"整理中"（界面上没有重试按钮）。改成失败，让用户可以点"重新生成"（决策 0011）
+export function recoverInterrupted() {
+  return db.records
+    .filter((r) => r.aiStatus === 'pending')
+    .modify({ aiStatus: 'error', aiError: '上次整理被打断了，请重新生成' })
+}
+
 function pickContent(d: RecordContent): RecordContent {
   return { title: d.title, category: d.category, intro: d.intro, tags: d.tags }
 }

@@ -3,7 +3,6 @@ import { lazy, Suspense, useState } from 'react'
 import { CATEGORIES } from '../../shared/ai.ts'
 import { db, type JournalRecord, type RecordContent } from '../db.ts'
 import { enrichRecord, saveContent } from '../lib/enrich.ts'
-import { deleteRecord } from '../lib/importPhotos.ts'
 import { useObjectUrl } from './useObjectUrl.ts'
 
 // 分享图只在点击时才需要，按需加载
@@ -90,7 +89,13 @@ function Editor({
   )
 }
 
-export function RecordCard({ record }: { record: JournalRecord }) {
+export function RecordCard({
+  record,
+  onDelete,
+}: {
+  record: JournalRecord
+  onDelete: (recordId: string) => void
+}) {
   const photos = useLiveQuery(
     () => db.photos.where('recordId').equals(record.id).sortBy('order'),
     [record.id],
@@ -130,10 +135,8 @@ export function RecordCard({ record }: { record: JournalRecord }) {
         </div>
         <button
           type="button"
-          onClick={() => {
-            if (confirm('删除这条记录和其中的照片？'))
-              void deleteRecord(record.id)
-          }}
+          // 不再弹确认框：删除后页面底部会出现"撤销"
+          onClick={() => onDelete(record.id)}
           className="-m-1 shrink-0 p-1 text-xs text-ink-soft hover:text-cherry"
         >
           删除

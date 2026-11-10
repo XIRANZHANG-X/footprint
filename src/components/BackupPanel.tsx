@@ -3,13 +3,19 @@ import type { JournalRecord } from '../db.ts'
 import { exportBackup, importBackup } from '../lib/backup.ts'
 import { backupReminder } from '../lib/reminder.ts'
 import { saveFile } from '../lib/saveFile.ts'
-import { getLastBackupAt, requestPersistence } from '../lib/storage.ts'
+import {
+  getLastBackupAt,
+  isQuotaError,
+  requestPersistence,
+} from '../lib/storage.ts'
 
 const timeFmt = new Intl.DateTimeFormat('zh-CN', {
   dateStyle: 'medium',
   timeStyle: 'short',
 })
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`
+const size = (n: number) =>
+  n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : mb(n)
 
 export function BackupPanel({ records }: { records: JournalRecord[] }) {
   const [lastBackupAt, setLastBackupAt] = useState(getLastBackupAt)
@@ -21,9 +27,14 @@ export function BackupPanel({ records }: { records: JournalRecord[] }) {
 
   useEffect(() => {
     void navigator.storage?.persisted?.().then(setPersisted)
-    void navigator.storage
-      ?.estimate?.()
-      .then((e) => e.usage !== undefined && setUsage(mb(e.usage)))
+    void navigator.storage?.estimate?.().then(
+      (e) =>
+        e.usage !== undefined &&
+        setUsage(
+          // quota 是浏览器给这个网站的上限，不是手机的剩余空间，所以写"上限"
+          e.quota ? `${mb(e.usage)}（上限 ${size(e.quota)}）` : mb(e.usage),
+        ),
+    )
   }, [records.length])
 
   const { unbacked } = backupReminder(records, lastBackupAt, now)
@@ -57,7 +68,11 @@ export function BackupPanel({ records }: { records: JournalRecord[] }) {
         `已导入 ${r.records} 条记录、${r.photos} 张照片（备份时间 ${timeFmt.format(r.exportedAt)}）。`,
       )
     } catch (err) {
-      setMessage(`导入失败：${err instanceof Error ? err.message : err}`)
+      setMessage(
+        isQuotaError(err)
+          ? '导入失败：这台设备留给 App 的存储空间不够，一条都没有导入。请清理手机空间后重试。'
+          : `导入失败：${err instanceof Error ? err.message : err}`,
+      )
     } finally {
       setBusy(false)
     }

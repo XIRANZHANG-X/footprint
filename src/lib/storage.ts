@@ -31,6 +31,25 @@ export async function requestPersistence(): Promise<boolean> {
   }
 }
 
+// 存储空间不够时浏览器抛 QuotaExceededError；Dexie 会把它包一层（放在 inner 里），
+// 事务中止时外层名字还可能变成 AbortError，所以顺着 inner / cause 往里找
+export function isQuotaError(e: unknown): boolean {
+  for (let cur = e, depth = 0; cur && depth < 5; depth++) {
+    if (typeof cur !== 'object') return false
+    const err = cur as { name?: unknown; inner?: unknown; cause?: unknown }
+    if (err.name === 'QuotaExceededError') return true
+    cur = err.inner ?? err.cause
+  }
+  return false
+}
+
+// 保存失败时给用户看的话（决策 0011）
+export function saveErrorMessage(e: unknown): string {
+  if (isQuotaError(e))
+    return '这台设备留给 App 的存储空间不够了，这次没有保存。请先到"备份"页导出备份，再删掉一些旧记录或清理手机空间后重试。'
+  return `保存失败：${e instanceof Error ? e.message : String(e)}`
+}
+
 // 访问口令（决策 0008）。放 localStorage：只在这台设备的这个网站里可读；
 // 清除浏览器数据后重新输入一次即可
 const ACCESS_TOKEN_KEY = 'footprint-journal:accessToken'

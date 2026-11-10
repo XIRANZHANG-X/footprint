@@ -3,9 +3,18 @@ import { lazy, Suspense, useEffect, useState, type ChangeEvent } from 'react'
 import { Timeline } from './components/Timeline.tsx'
 import { db } from './db.ts'
 import { checkAi, type AiState } from './lib/ai.ts'
-import { getLastBackupAt, requestPersistence } from './lib/storage.ts'
+import {
+  getLastBackupAt,
+  requestPersistence,
+  saveErrorMessage,
+} from './lib/storage.ts'
 import { enrichRecord } from './lib/enrich.ts'
-import { importPhotos } from './lib/importPhotos.ts'
+import {
+  deleteRecord,
+  importPhotos,
+  restoreRecord,
+  type DeletedRecord,
+} from './lib/importPhotos.ts'
 import { backupReminder } from './lib/reminder.ts'
 
 // 地图（Leaflet）体积较大，切到地图页签时再加载，记录页打开更快
@@ -27,6 +36,8 @@ const BackupPanel = lazy(() =>
     default: m.BackupPanel,
   })),
 )
+
+const UNDO_MS = 6000
 
 function App() {
   const records = useLiveQuery(() => db.records.toArray())
@@ -50,6 +61,28 @@ function App() {
     now,
   )
 
+  // 刚删掉的那条记录，留在内存里几秒钟供撤销（决策 0011）
+  const [deleted, setDeleted] = useState<DeletedRecord | null>(null)
+  useEffect(() => {
+    if (!deleted) return
+    const t = setTimeout(() => setDeleted(null), UNDO_MS)
+    return () => clearTimeout(t)
+  }, [deleted])
+
+  async function onDelete(recordId: string) {
+    setDeleted(await deleteRecord(recordId))
+  }
+
+  async function onUndo() {
+    if (!deleted) return
+    setDeleted(null)
+    try {
+      await restoreRecord(deleted)
+    } catch (e) {
+      setMessage(saveErrorMessage(e))
+    }
+  }
+
   function onPick(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
     e.target.value = '' // 允许再次选同一批照片
@@ -72,6 +105,9 @@ function App() {
       if (r.recordId && aiReady) void enrichRecord(r.recordId)
       // 有了第一批数据后申请持久化存储；浏览器拒绝也没关系，备份页可以再申请
       void requestPersistence()
+    } catch (e) {
+      // 最常见的是存储空间满了；照片还留在编辑区，用户腾出空间后可以再点一次"完成"
+      setMessage(saveErrorMessage(e))
     } finally {
       setBusy(false)
     }
@@ -155,10 +191,28 @@ function App() {
             </p>
           }
         >
-          {tab === 'timeline' && <Timeline records={records} />}
+          {tab === 'timeline' && (
+            <Timeline records={records} onDelete={(id) => void onDelete(id)} />
+          )}
           {tab === 'map' && <MapView records={records} />}
           {tab === 'backup' && <BackupPanel records={records} />}
         </Suspense>
+      )}
+
+      {deleted && (
+        <div
+          role="status"
+          className="fixed inset-x-0 bottom-4 z-[900] mx-auto flex w-[calc(100%-2rem)] max-w-md items-center justify-between gap-3 border-2 border-ink bg-ink px-3 py-2 text-sm text-paper shadow-px-sm"
+        >
+          <span>已删除这条记录</span>
+          <button
+            type="button"
+            className="px-btn px-btn-sm bg-lemon"
+            onClick={() => void onUndo()}
+          >
+            撤销
+          </button>
+        </div>
       )}
     </main>
   )

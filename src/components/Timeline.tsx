@@ -64,7 +64,13 @@ function EmptyState() {
 
 // 时间线按"一次出行"分组，最新的在上面。分组规则见 lib/trips.ts，
 // 用户可以手动拆分或合并，修正记在被拆/被合并的那条记录的 tripBreak 上。
-export function Timeline({ records }: { records: JournalRecord[] }) {
+export function Timeline({
+  records,
+  onDelete,
+}: {
+  records: JournalRecord[]
+  onDelete: (recordId: string) => void
+}) {
   const trips = groupTrips(records)
   const oldestTripId = trips[0]?.id
 
@@ -90,7 +96,7 @@ export function Timeline({ records }: { records: JournalRecord[] }) {
             <div className="space-y-4 border-l-4 border-taro pl-3">
               {[...trip.records].reverse().map((r) => (
                 <div key={r.id}>
-                  <RecordCard record={r} />
+                  <RecordCard record={r} onDelete={onDelete} />
                   {r.id !== firstId && (
                     <button
                       type="button"
