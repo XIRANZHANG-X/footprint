@@ -24,6 +24,7 @@ import {
   restoreRecord,
   type DeletedRecord,
 } from './lib/importPhotos.ts'
+import { proposePreferencesIfDue } from './lib/preferences.ts'
 import { draftSummary } from './lib/record.ts'
 import { backupReminder } from './lib/reminder.ts'
 
@@ -49,9 +50,18 @@ const BackupPanel = lazy(() =>
 
 const UNDO_MS = 6000
 
+// 偏好页只在点开时才需要
+const PreferencesPanel = lazy(() =>
+  import('./components/PreferencesPanel.tsx').then((m) => ({
+    default: m.PreferencesPanel,
+  })),
+)
+
 function App() {
   const records = useLiveQuery(() => db.records.toArray())
-  const [tab, setTab] = useState<'timeline' | 'map' | 'backup'>('timeline')
+  const [tab, setTab] = useState<'timeline' | 'map' | 'prefs' | 'backup'>(
+    'timeline',
+  )
   // 正在写的新记录：选好的照片（"只写几句"时为空数组）和开头的文字
   const [picked, setPicked] = useState<{ files: File[]; note: string } | null>(
     null,
@@ -90,6 +100,18 @@ function App() {
   useEffect(() => {
     void checkAi().then(setAiState)
   }, [])
+
+  // 攒够一批修改后，让 AI 提出一版新的偏好说明，等用户到偏好页确认（决策 0012 第 6 条）。
+  // 修改记录的条数变了就检查一次；失败不提示，下次再试
+  const editCount = useLiveQuery(() => db.edits.count())
+  useEffect(() => {
+    if (!aiReady || editCount === undefined) return
+    void proposePreferencesIfDue().catch(() => {})
+  }, [aiReady, editCount])
+  const hasProposal = useLiveQuery(async () => {
+    const row = await db.settings.get('preferences')
+    return Boolean((row?.value as { proposal?: string | null })?.proposal)
+  })
 
   // 打开页面时的时间就够用了：提醒按"天"计算，不需要实时刷新
   const [now] = useState(() => Date.now())
@@ -236,6 +258,16 @@ function App() {
         </Suspense>
       )}
 
+      {hasProposal && tab !== 'prefs' && (
+        <button
+          type="button"
+          onClick={() => setTab('prefs')}
+          className="px-card mt-4 w-full bg-mint px-3 py-2 text-left text-sm"
+        >
+          AI 根据你最近的修改，提出了一版新的写作偏好。去看看 →
+        </button>
+      )}
+
       {remind && tab !== 'backup' && (
         <button
           type="button"
@@ -247,11 +279,12 @@ function App() {
         </button>
       )}
 
-      <nav className="mt-6 grid grid-cols-3 gap-2">
+      <nav className="mt-6 grid grid-cols-4 gap-2">
         {(
           [
             ['timeline', '时间线'],
             ['map', '地图'],
+            ['prefs', '偏好'],
             ['backup', '备份'],
           ] as const
         ).map(([key, name]) => (
@@ -260,7 +293,7 @@ function App() {
             type="button"
             onClick={() => setTab(key)}
             aria-pressed={tab === key}
-            className={`px-btn ${tab === key ? 'bg-ink text-paper' : ''}`}
+            className={`px-btn px-2 ${tab === key ? 'bg-ink text-paper' : ''}`}
           >
             {name}
           </button>
@@ -279,6 +312,7 @@ function App() {
             <Timeline records={records} onDelete={(id) => void onDelete(id)} />
           )}
           {tab === 'map' && <MapView records={records} />}
+          {tab === 'prefs' && <PreferencesPanel />}
           {tab === 'backup' && <BackupPanel records={records} />}
         </Suspense>
       )}

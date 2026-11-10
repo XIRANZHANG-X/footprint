@@ -26,6 +26,16 @@ export const MAX_AI_IMAGES = 4
 export const DESCRIBE_MODES = ['full', 'meta'] as const
 export type DescribeMode = (typeof DESCRIBE_MODES)[number]
 
+// 学习用户写作习惯用的例子（决策 0012）：AI 以前写的稿子，和用户改后的版本
+const styleText = z.object({
+  title: z.string().max(40),
+  intro: z.string().max(2000),
+})
+export const styleExample = z.object({ draft: styleText, final: styleText })
+export type StyleExample = z.infer<typeof styleExample>
+
+export const MAX_PREFERENCES_CHARS = 600
+
 export const describeRequest = z
   .object({
     // 只写文字的记录没有照片（决策 0013），所以允许为空
@@ -37,6 +47,9 @@ export const describeRequest = z
     takenAt: z.number().optional(),
     placeName: z.string().nullable().optional(),
     mode: z.enum(DESCRIBE_MODES).default('full'),
+    // 用户的偏好说明，和最近几次修改的例子（少样本提示）。都只在这次请求里用，服务端不保存
+    preferences: z.string().max(MAX_PREFERENCES_CHARS).optional(),
+    examples: z.array(styleExample).max(3).optional(),
   })
   // 照片和文字至少要有一样，否则没有东西可整理
   .refine((r) => r.images.length > 0 || r.note.trim() !== '')
@@ -56,3 +69,10 @@ export const geocodeResponse = z.object({
   address: z.string().nullable(),
 })
 export type Geocode = z.infer<typeof geocodeResponse>
+
+// 让模型根据最近的修改，提出一版新的偏好说明（决策 0012 第 6 条）
+export const suggestRequest = z.object({
+  current: z.string().max(MAX_PREFERENCES_CHARS).default(''),
+  edits: z.array(styleExample).min(1).max(10),
+})
+export const suggestResponse = z.object({ text: z.string() })

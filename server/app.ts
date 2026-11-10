@@ -5,6 +5,8 @@ import { timingSafeEqual } from 'hono/utils/buffer'
 import {
   describeRequest,
   description,
+  MAX_PREFERENCES_CHARS,
+  suggestRequest,
   transcribeRequest,
 } from '../shared/ai.ts'
 import {
@@ -15,7 +17,12 @@ import {
 } from './dashscope.ts'
 import type { Env } from './env.ts'
 import { reverseGeocode } from './geocode.ts'
-import { describeSystem, describeUserText } from './prompts.ts'
+import {
+  describeSystem,
+  describeUserText,
+  SUGGEST_SYSTEM,
+  suggestUserText,
+} from './prompts.ts'
 
 type AppEnv = { Bindings: Env }
 
@@ -110,7 +117,10 @@ export function createApp({ requireAccessToken }: AppOptions) {
     const reply = await chat(config, {
       model: config.vlModel,
       messages: [
-        { role: 'system', content: describeSystem(req.mode) },
+        {
+          role: 'system',
+          content: describeSystem(req.mode, req.preferences, req.examples),
+        },
         {
           role: 'user',
           content: [
@@ -140,6 +150,31 @@ export function createApp({ requireAccessToken }: AppOptions) {
     }
     return c.json(result)
   })
+
+  // 根据最近的修改提出一版新的偏好说明。只处理文字，没有照片
+  app.post(
+    '/preferences/suggest',
+    checkAccess,
+    limit,
+    requireKey,
+    async (c) => {
+      const parsed = suggestRequest.safeParse(await c.req.json())
+      if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
+      const config = dashscopeConfig(c.env)
+      const reply = await chat(config, {
+        model: config.vlModel,
+        messages: [
+          { role: 'system', content: SUGGEST_SYSTEM },
+          {
+            role: 'user',
+            content: suggestUserText(parsed.data.current, parsed.data.edits),
+          },
+        ],
+      })
+      // 说明要放回提示词里，超长的部分截掉
+      return c.json({ text: reply.trim().slice(0, MAX_PREFERENCES_CHARS) })
+    },
+  )
 
   // 地名接口不花百炼额度，但被滥用会让 Nominatim 封掉我们，所以同样要口令
   app.get('/geocode', checkAccess, async (c) => {

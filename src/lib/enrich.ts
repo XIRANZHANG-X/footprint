@@ -3,6 +3,7 @@ import { db, type RecordContent } from '../db.ts'
 import { describe, geocode, placeLabel } from './ai.ts'
 import { logEdit } from './editLog.ts'
 import { toAiDataUrl } from './image.ts'
+import { styleForRequest } from './preferences.ts'
 
 const elapsed = (since: number) => Math.round(performance.now() - since)
 
@@ -50,7 +51,12 @@ export async function enrichRecord(
       )
       return { images, ms: elapsed(t) }
     }
-    const [place, shrunk] = await Promise.all([lookupPlace(), shrinkPhotos()])
+    const [place, shrunk, style] = await Promise.all([
+      lookupPlace(),
+      shrinkPhotos(),
+      // 偏好说明每次都带；例子只在写正文时带（决策 0012）
+      styleForRequest(mode === 'full'),
+    ])
 
     const modelStarted = performance.now()
     const draft = await describe({
@@ -60,6 +66,7 @@ export async function enrichRecord(
       takenAt: record.timeSource === 'file' ? undefined : record.takenAt,
       placeName: place.placeName,
       mode,
+      ...style,
     })
     const modelMs = elapsed(modelStarted)
 

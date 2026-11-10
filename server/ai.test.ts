@@ -161,6 +161,71 @@ describe('AI routes', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('describe appends the user preferences and examples to the system prompt', async () => {
+    const fetchMock = mockChatReply(
+      '{"title":"t","category":"美食","intro":"i","tags":[],"placeGuess":null}',
+    )
+    const example = {
+      draft: { title: '排队一小时的面', intro: '热气腾腾，浓郁却不腻。' },
+      final: { title: '排队的面', intro: '汤很浓。' },
+    }
+    await post('/describe', {
+      images: [IMG],
+      preferences: '- 不写感叹句',
+      examples: [example],
+    })
+    const system = sentBody(fetchMock).messages[0].content as string
+    expect(system).toContain('- 不写感叹句')
+    expect(system).toContain('你写的正文：热气腾腾，浓郁却不腻。')
+    expect(system).toContain('用户改成的正文：汤很浓。')
+  })
+
+  it('describe in meta mode keeps the preferences but drops the examples', async () => {
+    const fetchMock = mockChatReply(
+      '{"title":"t","category":"美食","tags":[],"placeGuess":null}',
+    )
+    await post('/describe', {
+      note: '排了一小时',
+      mode: 'meta',
+      preferences: '- 标题不超过 8 个字',
+      examples: [
+        {
+          draft: { title: 'a', intro: '例子里的正文' },
+          final: { title: 'b', intro: 'c' },
+        },
+      ],
+    })
+    const system = sentBody(fetchMock).messages[0].content as string
+    expect(system).toContain('- 标题不超过 8 个字')
+    expect(system).not.toContain('例子里的正文')
+  })
+
+  it('preferences/suggest sends the current text and the edits, and returns the reply', async () => {
+    const fetchMock = mockChatReply('  - 不写感叹句\n- 标题不超过 8 个字  ')
+    const res = await post('/preferences/suggest', {
+      current: '- 语气平实',
+      edits: [
+        {
+          draft: { title: '排队一小时的面！', intro: '太好吃了！' },
+          final: { title: '排队的面', intro: '好吃。' },
+        },
+      ],
+    })
+    expect(await res.json()).toEqual({
+      text: '- 不写感叹句\n- 标题不超过 8 个字',
+    })
+    const body = sentBody(fetchMock)
+    expect(body.messages[1].content).toContain('- 语气平实')
+    expect(body.messages[1].content).toContain('用户改成的正文：好吃。')
+  })
+
+  it('preferences/suggest needs at least one edit', async () => {
+    const fetchMock = mockChatReply('x')
+    const res = await post('/preferences/suggest', { current: '', edits: [] })
+    expect(res.status).toBe(400)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('describe returns 502 when the model reply is not valid JSON', async () => {
     mockChatReply('抱歉，我无法处理。')
     const res = await post('/describe', { images: [IMG] })

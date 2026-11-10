@@ -1,9 +1,11 @@
 import {
   description,
   geocodeResponse,
+  suggestResponse,
   transcribeResponse,
   type DescribeRequest,
   type Geocode,
+  type StyleExample,
 } from '../../shared/ai.ts'
 import type { z } from 'zod'
 import { getAccessToken, setAccessToken } from './storage.ts'
@@ -63,6 +65,19 @@ export async function transcribe(audio: string) {
 
 export function describe(req: DescribeRequest) {
   return call('/describe', description, postJson(req))
+}
+
+export async function suggestPreferences(
+  current: string,
+  edits: StyleExample[],
+) {
+  return (
+    await call(
+      '/preferences/suggest',
+      suggestResponse,
+      postJson({ current, edits }),
+    )
+  ).text
 }
 
 export function geocode(lat: number, lng: number) {
