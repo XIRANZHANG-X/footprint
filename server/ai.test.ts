@@ -109,6 +109,58 @@ describe('AI routes', () => {
     expect((await json(res)).category).toBe('其他')
   })
 
+  it('describe in full mode asks for a plain tone', async () => {
+    const fetchMock = mockChatReply(
+      '{"title":"t","category":"美食","intro":"i","tags":[],"placeGuess":null}',
+    )
+    await post('/describe', { images: [IMG], note: '排了一小时' })
+    const system = sentBody(fetchMock).messages[0].content as string
+    expect(system).toContain('语气平实')
+    expect(system).toContain('不要添加用户没说过的感受')
+  })
+
+  it('describe in meta mode never returns a body, even if the model writes one', async () => {
+    const fetchMock = mockChatReply(
+      '{"title":"排队一小时的面","category":"美食","intro":"模型多写的正文","tags":["面馆"],"placeGuess":"某某面馆"}',
+    )
+    const res = await post('/describe', {
+      images: [IMG],
+      note: '排了一小时',
+      mode: 'meta',
+    })
+    expect(await res.json()).toEqual({
+      title: '排队一小时的面',
+      category: '美食',
+      intro: '',
+      tags: ['面馆'],
+      placeGuess: '某某面馆',
+    })
+    const system = sentBody(fetchMock).messages[0].content as string
+    expect(system).toContain('不要改写')
+    expect(system).not.toContain('intro')
+  })
+
+  it('describe accepts a text-only record and tells the model there are no photos', async () => {
+    const fetchMock = mockChatReply(
+      '{"title":"t","category":"其他","intro":"i","tags":[],"placeGuess":null}',
+    )
+    const res = await post('/describe', { note: '今天去了江边' })
+    expect(res.status).toBe(200)
+    const userContent = sentBody(fetchMock).messages[1].content
+    expect(userContent).toHaveLength(1)
+    expect(userContent[0].text).toContain('今天去了江边')
+    expect(userContent[0].text).toContain('没有照片')
+  })
+
+  it('describe rejects a request with neither photos nor text', async () => {
+    const fetchMock = mockChatReply('{}')
+    expect((await post('/describe', { note: '  ' })).status).toBe(400)
+    expect(
+      (await post('/describe', { mode: 'nope', images: [IMG] })).status,
+    ).toBe(400)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('describe returns 502 when the model reply is not valid JSON', async () => {
     mockChatReply('抱歉，我无法处理。')
     const res = await post('/describe', { images: [IMG] })

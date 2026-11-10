@@ -7,9 +7,11 @@ import { setLastBackupAt } from './storage.ts'
 const bytes = async (b: Blob) => new Uint8Array(await b.arrayBuffer())
 
 export async function exportBackup(): Promise<{ blob: Blob; name: string }> {
-  const [records, photos] = await Promise.all([
+  const [records, photos, edits, settings] = await Promise.all([
     db.records.toArray(),
     db.photos.toArray(),
+    db.edits.toArray(),
+    db.settings.toArray(),
   ])
   const photoBytes = await Promise.all(
     photos.map(async (p) => ({
@@ -19,7 +21,7 @@ export async function exportBackup(): Promise<{ blob: Blob; name: string }> {
     })),
   )
   const now = Date.now()
-  const zip = packBackup(records, photoBytes, now)
+  const zip = packBackup(records, photoBytes, now, { edits, settings })
   setLastBackupAt(now)
   const d = new Date(now)
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -46,6 +48,9 @@ function withDefaults(r: JournalRecord): JournalRecord {
         ? '备份时还在整理，请重新生成'
         : (r.aiError ?? null),
     tripBreak: r.tripBreak ?? null,
+    bodySource: r.bodySource ?? (r.content ? 'ai' : 'own'),
+    placeGuess: r.placeGuess ?? r.aiDraft?.placeGuess ?? null,
+    aiTimings: r.aiTimings ?? null,
   }
 }
 
@@ -59,10 +64,16 @@ export async function importBackup(file: File) {
       type: 'image/jpeg',
     }),
   }))
-  await db.transaction('rw', db.records, db.photos, async () => {
-    await db.records.bulkPut(data.records.map(withDefaults))
-    await db.photos.bulkPut(photos)
-  })
+  await db.transaction(
+    'rw',
+    [db.records, db.photos, db.edits, db.settings],
+    async () => {
+      await db.records.bulkPut(data.records.map(withDefaults))
+      await db.photos.bulkPut(photos)
+      await db.edits.bulkPut(data.edits)
+      await db.settings.bulkPut(data.settings)
+    },
+  )
   return {
     records: data.records.length,
     photos: photos.length,

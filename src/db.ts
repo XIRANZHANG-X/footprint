@@ -1,5 +1,5 @@
 import { Dexie, type EntityTable } from 'dexie'
-import type { Description } from '../shared/ai.ts'
+import type { DescribeMode, Description } from '../shared/ai.ts'
 import type { LatLng, TimeSource } from './lib/photoMeta.ts'
 import type { LocationStatus } from './lib/record.ts'
 import type { TripBreak } from './lib/trips.ts'
@@ -11,6 +11,15 @@ export type RecordContent = Pick<
   Description,
   'title' | 'category' | 'intro' | 'tags'
 >
+
+// 一次整理各步花了多少毫秒（决策 0013 第 5 条）：攒几天数据后，用来决定要不要做"边生成边显示"或换模型
+export type AiTimings = {
+  mode: DescribeMode
+  geocodeMs: number | null // 没查地名时为 null
+  imagesMs: number // 缩小照片
+  modelMs: number // 模型生成
+  totalMs: number // 从开始到写回记录；地名和缩照片并行，所以小于各步之和
+}
 
 export type JournalRecord = {
   id: string
@@ -28,7 +37,29 @@ export type JournalRecord = {
   aiStatus: AiStatus
   aiError: string | null
   tripBreak: TripBreak // 用户对出行归组的手动修正（见 lib/trips.ts）
+  // 正文用哪一版（决策 0012）：own = 用户自己写的（note），ai = AI 整理的（content.intro）。两版都留着，可以换
+  bodySource: 'own' | 'ai'
+  // AI 从照片里猜的地点。只是一个候选，用户点了才用（决策 0013 第 2 条）
+  placeGuess: string | null
+  aiTimings: AiTimings | null
 }
+
+// 修改记录（决策 0012 第 1 条）："AI 原稿 → 用户改后的版本"，学习用户写作习惯的原料。
+// 只存在本机，会进备份
+export type EditEntry = {
+  id: string
+  recordId: string
+  at: number
+  // edit：用户改了 AI 的稿子；choseOwn：用户放弃 AI 版本，改用自己写的
+  kind: 'edit' | 'choseOwn'
+  draft: RecordContent
+  final: RecordContent
+  changedChars: number
+  draftChars: number
+}
+
+// 零散的设置（偏好说明等），一个键一行
+export type Setting = { key: string; value: unknown }
 
 export type StoredPhoto = {
   id: string
@@ -47,6 +78,8 @@ export type StoredPhoto = {
 export const db = new Dexie('footprint-journal') as Dexie & {
   records: EntityTable<JournalRecord, 'id'>
   photos: EntityTable<StoredPhoto, 'id'>
+  edits: EntityTable<EditEntry, 'id'>
+  settings: EntityTable<Setting, 'key'>
 }
 
 db.version(1).stores({
@@ -81,5 +114,25 @@ db.version(3)
       .toCollection()
       .modify((r: Partial<JournalRecord>) => {
         r.tripBreak ??= null
+      }),
+  )
+
+// v4（第二档 2A）：修改记录表、设置表；记录加上"正文用哪一版"、AI 猜的地点、整理耗时。
+db.version(4)
+  .stores({
+    records: 'id, takenAt',
+    photos: 'id, recordId',
+    edits: 'id, recordId, at',
+    settings: 'key',
+  })
+  .upgrade((tx) =>
+    tx
+      .table('records')
+      .toCollection()
+      .modify((r: Partial<JournalRecord>) => {
+        // 旧记录只要有整理结果，显示的就是 AI 那一版
+        r.bodySource ??= r.content ? 'ai' : 'own'
+        r.placeGuess ??= r.aiDraft?.placeGuess ?? null
+        r.aiTimings ??= null
       }),
   )

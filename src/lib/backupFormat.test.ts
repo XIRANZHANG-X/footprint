@@ -23,6 +23,9 @@ const record: JournalRecord = {
   aiStatus: 'done',
   aiError: null,
   tripBreak: null,
+  bodySource: 'ai',
+  placeGuess: null,
+  aiTimings: null,
 }
 
 const photo: PhotoBytes = {
@@ -44,6 +47,50 @@ describe('backup format', () => {
     expect(out.exportedAt).toBe(123)
     expect(out.records).toEqual([record])
     expect(out.photos).toEqual([photo])
+  })
+
+  it('round-trips the edit log and settings', () => {
+    const content = {
+      title: 't',
+      category: '美食' as const,
+      intro: 'i',
+      tags: [],
+    }
+    const edits = [
+      {
+        id: 'e1',
+        recordId: 'r1',
+        at: 5,
+        kind: 'edit' as const,
+        draft: content,
+        final: { ...content, intro: '改过的' },
+        changedChars: 3,
+        draftChars: 2,
+      },
+    ]
+    const settings = [{ key: 'preferences', value: { text: '语气平实' } }]
+    const out = unpackBackup(
+      packBackup([record], [photo], 1, { edits, settings }),
+    )
+    expect(out.edits).toEqual(edits)
+    expect(out.settings).toEqual(settings)
+  })
+
+  it('reads an older backup that has no edit log or settings', () => {
+    const old = zipSync({
+      'manifest.json': strToU8(
+        JSON.stringify({
+          app: 'footprint-journal',
+          format: 1,
+          exportedAt: 1,
+          records: [record],
+          photos: [],
+        }),
+      ),
+    })
+    const out = unpackBackup(old)
+    expect(out.edits).toEqual([])
+    expect(out.settings).toEqual([])
   })
 
   it('keeps unknown record fields so newer fields survive a round trip', () => {

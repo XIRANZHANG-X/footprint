@@ -15,7 +15,7 @@ import {
 } from './dashscope.ts'
 import type { Env } from './env.ts'
 import { reverseGeocode } from './geocode.ts'
-import { DESCRIBE_SYSTEM, describeUserText } from './prompts.ts'
+import { describeSystem, describeUserText } from './prompts.ts'
 
 type AppEnv = { Bindings: Env }
 
@@ -110,7 +110,7 @@ export function createApp({ requireAccessToken }: AppOptions) {
     const reply = await chat(config, {
       model: config.vlModel,
       messages: [
-        { role: 'system', content: DESCRIBE_SYSTEM },
+        { role: 'system', content: describeSystem(req.mode) },
         {
           role: 'user',
           content: [
@@ -125,7 +125,13 @@ export function createApp({ requireAccessToken }: AppOptions) {
     })
     let result
     try {
-      result = description.parse(extractJsonObject(reply))
+      const raw = extractJsonObject(reply)
+      // meta 模式下模型不写正文；万一它还是写了，也不采用
+      result = description.parse(
+        req.mode === 'meta' && raw && typeof raw === 'object'
+          ? { ...raw, intro: '' }
+          : raw,
+      )
     } catch {
       return c.json(
         { error: '模型返回的内容无法解析', raw: reply.slice(0, 300) },

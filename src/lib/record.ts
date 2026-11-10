@@ -26,3 +26,20 @@ export function summarizeRecord(photos: PhotoMeta[]): RecordSummary {
     locationStatus: location ? 'gps' : 'pending',
   }
 }
+
+const sec = (ms: number) => `${(ms / 1000).toFixed(1)} 秒`
+
+// 卡片上显示的整理耗时，例如"整理用时 5.2 秒（地名 0.9 秒 · 缩图 0.3 秒 · 模型 4.8 秒）"
+export function formatTimings(t: {
+  geocodeMs: number | null
+  imagesMs: number
+  modelMs: number
+  totalMs: number
+}): string {
+  const parts = [
+    ...(t.geocodeMs === null ? [] : [`地名 ${sec(t.geocodeMs)}`]),
+    `缩图 ${sec(t.imagesMs)}`,
+    `模型 ${sec(t.modelMs)}`,
+  ]
+  return `整理用时 ${sec(t.totalMs)}（${parts.join(' · ')}）`
+}

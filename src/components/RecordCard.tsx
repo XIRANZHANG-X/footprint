@@ -3,6 +3,7 @@ import { lazy, Suspense, useState } from 'react'
 import { CATEGORIES } from '../../shared/ai.ts'
 import { db, type JournalRecord, type RecordContent } from '../db.ts'
 import { enrichRecord, saveContent } from '../lib/enrich.ts'
+import { formatTimings } from '../lib/record.ts'
 import { useObjectUrl } from './useObjectUrl.ts'
 
 // 分享图只在点击时才需要，按需加载
@@ -219,7 +220,7 @@ export function RecordCard({
                   })
               if (edited && !confirm('重新生成会替换你改过的正文，继续吗？'))
                 return
-              void enrichRecord(record.id, true)
+              void enrichRecord(record.id, { overwrite: true })
             }}
           >
             {record.aiStatus === 'none' ? 'AI 整理' : '重新生成'}
@@ -235,6 +236,12 @@ export function RecordCard({
           </button>
         )}
       </footer>
+      {record.aiTimings && record.aiStatus === 'done' && (
+        // 临时的耗时信息（决策 0013 第 5 条）：攒几天数据，用来决定要不要继续优化速度
+        <p className="mt-2 text-[11px] text-ink-soft">
+          {formatTimings(record.aiTimings)}
+        </p>
+      )}
       {sharing && (
         <Suspense fallback={null}>
           <SharePreview record={record} onClose={() => setSharing(false)} />

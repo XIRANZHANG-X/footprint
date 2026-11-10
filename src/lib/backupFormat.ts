@@ -1,9 +1,9 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { z } from 'zod'
-import type { JournalRecord, StoredPhoto } from '../db.ts'
+import type { EditEntry, JournalRecord, Setting, StoredPhoto } from '../db.ts'
 
 // 备份文件格式（zip）：
-//   manifest.json      记录和照片的元数据
+//   manifest.json      记录和照片的元数据，以及修改记录和设置（偏好说明等）
 //   photos/<id>.jpg    存储版照片
 //   thumbs/<id>.jpg    缩略图
 // 这一层只处理字节，不碰 IndexedDB 和 Blob，方便在 Node 里测试往返。
@@ -37,7 +37,21 @@ const manifestSchema = z.object({
   exportedAt: z.number(),
   records: z.array(recordSchema),
   photos: z.array(photoSchema),
+  // 后来加的两项：旧备份里没有，按空处理；旧版本 App 读新备份时会忽略它们
+  edits: z
+    .array(
+      z
+        .object({ id: z.string(), recordId: z.string(), at: z.number() })
+        .loose(),
+    )
+    .default([]),
+  settings: z
+    .array(z.object({ key: z.string(), value: z.unknown() }))
+    .default([]),
 })
+
+// 修改记录和设置：学到的写作习惯也要能跟着备份走（决策 0012）
+export type BackupExtras = { edits: EditEntry[]; settings: Setting[] }
 
 const photoPath = (id: string) => `photos/${id}.jpg`
 const thumbPath = (id: string) => `thumbs/${id}.jpg`
@@ -46,11 +60,13 @@ export function packBackup(
   records: JournalRecord[],
   photos: PhotoBytes[],
   exportedAt: number,
+  extras: BackupExtras = { edits: [], settings: [] },
 ): Uint8Array {
   const manifest = {
     app: BACKUP_APP,
     format: BACKUP_FORMAT,
     exportedAt,
+    ...extras,
     records,
     photos: photos.map((p) => {
       const { blob: _blob, thumb: _thumb, ...meta } = p
@@ -74,6 +90,8 @@ export function unpackBackup(bytes: Uint8Array): {
   exportedAt: number
   records: JournalRecord[]
   photos: PhotoBytes[]
+  edits: EditEntry[]
+  settings: Setting[]
 } {
   let files: Record<string, Uint8Array>
   try {
@@ -99,5 +117,7 @@ export function unpackBackup(bytes: Uint8Array): {
     exportedAt: manifest.exportedAt,
     records: manifest.records as unknown as JournalRecord[],
     photos,
+    edits: manifest.edits as unknown as EditEntry[],
+    settings: manifest.settings as Setting[],
   }
 }

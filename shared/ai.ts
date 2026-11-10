@@ -21,15 +21,25 @@ export const transcribeResponse = z.object({ text: z.string() })
 
 export const MAX_AI_IMAGES = 4
 
-export const describeRequest = z.object({
-  images: z
-    .array(z.string().startsWith('data:image/'))
-    .min(1)
-    .max(MAX_AI_IMAGES),
-  note: z.string().max(2000).default(''),
-  takenAt: z.number().optional(),
-  placeName: z.string().nullable().optional(),
-})
+// full：完整整理（标题、类别、正文、标签）；
+// meta：正文用用户自己写的，只补标题、类别、标签（决策 0012）
+export const DESCRIBE_MODES = ['full', 'meta'] as const
+export type DescribeMode = (typeof DESCRIBE_MODES)[number]
+
+export const describeRequest = z
+  .object({
+    // 只写文字的记录没有照片（决策 0013），所以允许为空
+    images: z
+      .array(z.string().startsWith('data:image/'))
+      .max(MAX_AI_IMAGES)
+      .default([]),
+    note: z.string().max(2000).default(''),
+    takenAt: z.number().optional(),
+    placeName: z.string().nullable().optional(),
+    mode: z.enum(DESCRIBE_MODES).default('full'),
+  })
+  // 照片和文字至少要有一样，否则没有东西可整理
+  .refine((r) => r.images.length > 0 || r.note.trim() !== '')
 export type DescribeRequest = z.input<typeof describeRequest>
 
 export const description = z.object({

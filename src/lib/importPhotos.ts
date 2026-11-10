@@ -51,6 +51,9 @@ export async function importPhotos(
       aiStatus: 'none',
       aiError: null,
       tripBreak: null,
+      bodySource: 'own',
+      placeGuess: null,
+      aiTimings: null,
     })
   })
   return { recordId, imported: photos.length, failed }
@@ -69,6 +72,7 @@ export async function deleteRecord(
     const photos = await db.photos.where('recordId').equals(recordId).toArray()
     await db.photos.where('recordId').equals(recordId).delete()
     await db.records.delete(recordId)
+    // 修改记录故意留着：它记的是写作习惯，不属于某一条记录，删了记录也不该让 AI 忘掉学到的东西
     return { record, photos }
   })
 }
