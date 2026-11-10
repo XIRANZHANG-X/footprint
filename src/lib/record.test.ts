@@ -3,9 +3,11 @@ import type { PhotoMeta } from './photoMeta.ts'
 import {
   draftSummary,
   formatTimings,
+  fromLocalInput,
   hasBothVersions,
   recordBody,
   summarizeRecord,
+  toLocalInput,
 } from './record.ts'
 
 const here = { lat: 31.2, lng: 121.5 }
@@ -130,5 +132,23 @@ describe('draftSummary', () => {
   it('只有照片或只有文字', () => {
     expect(draftSummary({ files: [1], note: ' ' })).toBe('1 张照片')
     expect(draftSummary({ files: [], note: '江边走走' })).toBe('江边走走')
+  })
+})
+
+describe('toLocalInput / fromLocalInput', () => {
+  it('按本地时间格式化，补零', () => {
+    expect(toLocalInput(new Date(2026, 0, 5, 9, 7).getTime())).toBe(
+      '2026-01-05T09:07',
+    )
+  })
+
+  it('格式化后再解析，回到同一分钟', () => {
+    const ms = new Date(2026, 10, 10, 14, 5).getTime()
+    expect(fromLocalInput(toLocalInput(ms))).toBe(ms)
+  })
+
+  it('空的或不完整的输入返回 null', () => {
+    expect(fromLocalInput('')).toBeNull()
+    expect(fromLocalInput('2026-11-10')).toBeNull()
   })
 })

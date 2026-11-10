@@ -1,14 +1,33 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { lazy, Suspense, useState } from 'react'
 import { CATEGORIES } from '../../shared/ai.ts'
-import { db, type JournalRecord, type RecordContent } from '../db.ts'
+import {
+  db,
+  type JournalRecord,
+  type RecordContent,
+  type StoredPhoto,
+} from '../db.ts'
 import { chooseBody, enrichRecord, saveContent } from '../lib/enrich.ts'
-import { formatTimings, hasBothVersions, recordBody } from '../lib/record.ts'
+import { changePhotos } from '../lib/importPhotos.ts'
+import {
+  formatTimings,
+  fromLocalInput,
+  hasBothVersions,
+  recordBody,
+  toLocalInput,
+} from '../lib/record.ts'
+import { setRecordDetails } from '../lib/recordEdits.ts'
+import { saveErrorMessage } from '../lib/storage.ts'
 import { useObjectUrl } from './useObjectUrl.ts'
 
 // 分享图只在点击时才需要，按需加载
 const SharePreview = lazy(() =>
   import('./SharePreview.tsx').then((m) => ({ default: m.SharePreview })),
+)
+
+// 大图只在点开照片时才需要
+const PhotoViewer = lazy(() =>
+  import('./PhotoViewer.tsx').then((m) => ({ default: m.PhotoViewer })),
 )
 
 function Thumb({ blob }: { blob: Blob }) {
@@ -34,68 +53,223 @@ const BLANK: RecordContent = {
   tags: [],
 }
 
-function Editor({
-  initial,
-  initialBody,
-  onSave,
-  onCancel,
+// 编辑页里的一张照片：右上角的按钮用来移除（或撤回移除），保存时才真的生效
+function EditThumb({
+  blob,
+  removed = false,
+  onToggle,
 }: {
-  initial: RecordContent
-  initialBody: string
-  onSave: (c: RecordContent, body: string) => void
-  onCancel: () => void
+  blob: Blob
+  removed?: boolean
+  onToggle: () => void
 }) {
-  const [c, setC] = useState(initial)
-  const [body, setBody] = useState(initialBody)
-  const [tags, setTags] = useState(initial.tags.join(' '))
+  return (
+    <div className="relative">
+      <div className={removed ? 'opacity-30' : ''}>
+        <Thumb blob={blob} />
+      </div>
+      <button
+        type="button"
+        aria-label={removed ? '撤回移除' : '移除这张照片'}
+        onClick={onToggle}
+        className="absolute top-1 right-1 min-h-7 min-w-7 border-2 border-ink bg-paper px-1 text-xs"
+      >
+        {removed ? '撤回' : '×'}
+      </button>
+    </div>
+  )
+}
+
+// 编辑页（决策 0013）：照片、时间、地名、标题、类别、正文、原话、标签，点"保存"一起生效
+function Editor({
+  record,
+  photos,
+  onClose,
+}: {
+  record: JournalRecord
+  photos: StoredPhoto[]
+  onClose: () => void
+}) {
+  const content = record.content
+  const [c, setC] = useState(content ?? BLANK)
+  const [body, setBody] = useState(recordBody(record))
+  const [note, setNote] = useState(record.note)
+  const [tags, setTags] = useState((content?.tags ?? []).join(' '))
+  const initialTime = toLocalInput(record.takenAt)
+  const [time, setTime] = useState(initialTime)
+  const [place, setPlace] = useState(record.placeName ?? '')
+  const [removed, setRemoved] = useState<string[]>([])
+  const [added, setAdded] = useState<File[]>([])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string>()
+  // 正文是 AI 那一版时，上面的"正文"改的是 AI 的稿子，原话另给一栏
+  const showsNote =
+    record.bodySource === 'ai' && (content?.intro ?? '').trim() !== ''
   const input = 'px-input'
+  const label = 'font-pixel text-[12px] text-ink-soft'
+
+  const save = async () => {
+    setSaving(true)
+    setError(undefined)
+    try {
+      const next = { ...c, tags: tags.split(/\s+/).filter(Boolean).slice(0, 5) }
+      // 还没有标题和标签、这次也没填：只存正文，不凭空造出一份空的整理结果
+      if (!content && !next.title.trim() && next.tags.length === 0)
+        await chooseBody(record.id, 'own', body)
+      else
+        await saveContent(record.id, next, body, showsNote ? note : undefined)
+      await setRecordDetails(record.id, {
+        // 输入框只精确到分钟：没动过就不传，免得把原来的秒数抹掉
+        takenAt: time === initialTime ? null : fromLocalInput(time),
+        placeName: place,
+      })
+      const failed = await changePhotos(record.id, removed, added)
+      if (failed.length > 0) {
+        // 其他改动已经存好了；留在编辑页，让用户看到哪几张没加进来
+        setRemoved([])
+        setAdded([])
+        setError(`这些照片没能加进来：${failed.join('、')}`)
+        setSaving(false)
+        return
+      }
+      onClose()
+    } catch (e) {
+      setError(saveErrorMessage(e))
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="mt-3 space-y-3">
-      <input
-        className={input}
-        value={c.title}
-        placeholder="标题"
-        onChange={(e) => setC({ ...c, title: e.target.value })}
-      />
-      <select
-        className={input}
-        value={c.category}
-        onChange={(e) =>
-          setC({ ...c, category: e.target.value as RecordContent['category'] })
-        }
-      >
-        {CATEGORIES.map((x) => (
-          <option key={x}>{x}</option>
-        ))}
-      </select>
-      <textarea
-        className={input}
-        rows={4}
-        value={body}
-        placeholder="正文"
-        onChange={(e) => setBody(e.target.value)}
-      />
-      <input
-        className={input}
-        value={tags}
-        placeholder="标签，用空格分隔"
-        onChange={(e) => setTags(e.target.value)}
-      />
+      <div>
+        <p className={label}>照片</p>
+        <div className="mt-1 grid grid-cols-3 gap-2">
+          {photos.map((p) => (
+            <EditThumb
+              key={p.id}
+              blob={p.thumb}
+              removed={removed.includes(p.id)}
+              onToggle={() =>
+                setRemoved((r) =>
+                  r.includes(p.id) ? r.filter((x) => x !== p.id) : [...r, p.id],
+                )
+              }
+            />
+          ))}
+          {added.map((f, i) => (
+            <EditThumb
+              // 同一个文件可能被选两次，下标一起当 key
+              key={`${f.name}-${f.lastModified}-${i}`}
+              blob={f}
+              onToggle={() => setAdded((a) => a.filter((_, j) => j !== i))}
+            />
+          ))}
+          <label className="flex aspect-square cursor-pointer items-center justify-center border-2 border-dashed border-ink text-center text-xs text-ink-soft">
+            ＋ 加照片
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className="sr-only"
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? [])
+                setAdded((a) => [...a, ...files])
+                // 清空，这样连续两次选同一张也会触发
+                e.target.value = ''
+              }}
+            />
+          </label>
+        </div>
+      </div>
+      <label className="block">
+        <span className={label}>时间</span>
+        <input
+          type="datetime-local"
+          className={`${input} mt-1`}
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+        />
+      </label>
+      <label className="block">
+        <span className={label}>地名</span>
+        <input
+          className={`${input} mt-1`}
+          value={place}
+          placeholder="可以留空"
+          onChange={(e) => setPlace(e.target.value)}
+        />
+      </label>
+      <label className="block">
+        <span className={label}>标题</span>
+        <input
+          className={`${input} mt-1`}
+          value={c.title}
+          onChange={(e) => setC({ ...c, title: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className={label}>类别</span>
+        <select
+          className={`${input} mt-1`}
+          value={c.category}
+          onChange={(e) =>
+            setC({
+              ...c,
+              category: e.target.value as RecordContent['category'],
+            })
+          }
+        >
+          {CATEGORIES.map((x) => (
+            <option key={x}>{x}</option>
+          ))}
+        </select>
+      </label>
+      <label className="block">
+        <span className={label}>{showsNote ? '正文（AI 写的）' : '正文'}</span>
+        <textarea
+          className={`${input} mt-1`}
+          rows={4}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+        />
+      </label>
+      {showsNote && (
+        <label className="block">
+          <span className={label}>我的原话</span>
+          <textarea
+            className={`${input} mt-1`}
+            rows={2}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </label>
+      )}
+      <label className="block">
+        <span className={label}>标签</span>
+        <input
+          className={`${input} mt-1`}
+          value={tags}
+          placeholder="用空格分隔"
+          onChange={(e) => setTags(e.target.value)}
+        />
+      </label>
+      {error && <p className="text-xs text-cherry">{error}</p>}
       <div className="flex justify-end gap-3">
-        <button type="button" onClick={onCancel} className="px-btn px-btn-sm">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={saving}
+          className="px-btn px-btn-sm"
+        >
           取消
         </button>
         <button
           type="button"
-          onClick={() =>
-            onSave(
-              { ...c, tags: tags.split(/\s+/).filter(Boolean).slice(0, 5) },
-              body,
-            )
-          }
+          onClick={() => void save()}
+          disabled={saving}
           className="px-btn px-btn-sm bg-berry"
         >
-          保存
+          {saving ? '保存中…' : '保存'}
         </button>
       </div>
     </div>
@@ -160,12 +334,23 @@ export function RecordCard({
   )
   const [editing, setEditing] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const [viewing, setViewing] = useState<number | null>(null)
   const content = record.content
   const busy = record.aiStatus === 'pending'
   const choosing = record.choosing === true && !busy
   const body = recordBody(record)
   const hasAiBody = (content?.intro ?? '').trim() !== ''
   const usesOwn = record.bodySource === 'own'
+
+  const regenerate = () => {
+    const edited =
+      !usesOwn &&
+      content !== null &&
+      record.aiDraft !== null &&
+      content.intro !== record.aiDraft.intro
+    if (edited && !confirm('重新生成会替换你改过的正文，继续吗？')) return
+    void enrichRecord(record.id, { overwrite: true })
+  }
 
   return (
     <article className="px-card p-3">
@@ -207,26 +392,53 @@ export function RecordCard({
         </button>
       </header>
 
-      {photos && photos.length > 0 && (
+      {!editing && photos && photos.length > 0 && (
         <div className="mt-3 grid grid-cols-3 gap-2">
-          {photos.map((p) => (
-            <Thumb key={p.id} blob={p.thumb} />
+          {photos.map((p, i) => (
+            <button
+              key={p.id}
+              type="button"
+              aria-label={`看大图，第 ${i + 1} 张`}
+              onClick={() => setViewing(i)}
+            >
+              <Thumb blob={p.thumb} />
+            </button>
           ))}
+        </div>
+      )}
+
+      {/* 加删照片后只提示，不自动重新整理（决策 0013 第 1 条） */}
+      {!editing && !busy && record.photosChanged && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-2 border-dashed border-ink bg-lemon p-2 text-sm">
+          <span className="w-full">照片有变动，要重新整理吗？</span>
+          <button
+            type="button"
+            className="px-btn px-btn-sm bg-mint"
+            onClick={() => {
+              // 正文用的是自己写的：照片变了只需要重新补标题和标签
+              if (usesOwn) void enrichRecord(record.id, { mode: 'meta' })
+              else regenerate()
+            }}
+          >
+            重新整理
+          </button>
+          <button
+            type="button"
+            className="px-btn px-btn-sm"
+            onClick={() =>
+              void db.records.update(record.id, { photosChanged: false })
+            }
+          >
+            不用
+          </button>
         </div>
       )}
 
       {editing ? (
         <Editor
-          initial={content ?? BLANK}
-          initialBody={body}
-          onCancel={() => setEditing(false)}
-          onSave={(c, text) => {
-            // 还没有标题和标签、这次也没填：只存正文，不凭空造出一份空的整理结果
-            if (!content && !c.title.trim() && c.tags.length === 0)
-              void chooseBody(record.id, 'own', text)
-            else void saveContent(record.id, c, text)
-            setEditing(false)
-          }}
+          record={record}
+          photos={photos ?? []}
+          onClose={() => setEditing(false)}
         />
       ) : choosing ? (
         // key：重新生成后 AI 那一版换了，输入框要跟着换
@@ -301,16 +513,7 @@ export function RecordCard({
           <button
             type="button"
             className="px-btn px-btn-sm bg-mint"
-            onClick={() => {
-              const edited =
-                !usesOwn &&
-                content !== null &&
-                record.aiDraft !== null &&
-                content.intro !== record.aiDraft.intro
-              if (edited && !confirm('重新生成会替换你改过的正文，继续吗？'))
-                return
-              void enrichRecord(record.id, { overwrite: true })
-            }}
+            onClick={regenerate}
           >
             {hasAiBody ? '重新生成' : '让 AI 写一版'}
           </button>
@@ -330,6 +533,15 @@ export function RecordCard({
         <p className="mt-2 text-[11px] text-ink-soft">
           {formatTimings(record.aiTimings)}
         </p>
+      )}
+      {viewing !== null && photos && photos.length > 0 && (
+        <Suspense fallback={null}>
+          <PhotoViewer
+            photos={photos}
+            start={Math.min(viewing, photos.length - 1)}
+            onClose={() => setViewing(null)}
+          />
+        </Suspense>
       )}
       {sharing && (
         <Suspense fallback={null}>

@@ -79,6 +79,7 @@ export async function enrichRecord(
       placeName: place.placeName ?? draft.placeGuess,
       placeGuess: draft.placeGuess,
       aiStatus: 'done',
+      photosChanged: false,
       aiTimings: {
         mode,
         geocodeMs: place.ms,
@@ -125,11 +126,13 @@ function pickContent(d: RecordContent): RecordContent {
 }
 
 // 保存编辑页的内容，同时记下"AI 原稿 → 改后的版本"供以后学习（决策 0012）。
-// body 是编辑页里的正文：记录用的是自己写的那一版时改的是原话，否则改的是 AI 的正文
+// body 是编辑页里的正文：记录用的是自己写的那一版时改的是原话，否则改的是 AI 的正文。
+// note：正文是 AI 那一版时，编辑页另有一栏可以改原话；不传就不动
 export function saveContent(
   recordId: string,
   content: RecordContent,
   body: string,
+  note?: string,
 ) {
   return db.transaction('rw', db.records, db.edits, async () => {
     const record = await db.records.get(recordId)
@@ -143,8 +146,16 @@ export function saveContent(
       return
     }
     const next = { ...content, intro: body }
-    await db.records.update(recordId, { content: next })
-    if (record.aiDraft) await logEdit(recordId, record.aiDraft, next)
+    await db.records.update(recordId, {
+      content: next,
+      ...(note === undefined ? {} : { note: note.trim() }),
+    })
+    // 这次保存没动标题和正文（比如只改了时间或地名）就不记：否则会被当成一次"改动 0%"的修改
+    const textChanged =
+      next.title !== record.content?.title ||
+      next.intro !== record.content?.intro
+    if (record.aiDraft && textChanged)
+      await logEdit(recordId, record.aiDraft, next)
   })
 }
 

@@ -8,13 +8,10 @@ export type ImportResult = {
   failed: string[] // 处理失败的文件名（例如浏览器解不了的 HEIC）
 }
 
-export async function importPhotos(
-  files: File[],
-  note = '',
-): Promise<ImportResult> {
+// 读元数据 + 压缩，得到可以直接入库的照片。firstOrder：第一张排在第几位
+async function preparePhotos(files: File[], recordId: string, firstOrder = 0) {
   // 读照片信息的库（exifr）体积不小，只有导入照片时才用得上，到这里再加载，首屏更快
   const { readPhotoMeta } = await import('./exif.ts')
-  const recordId = crypto.randomUUID()
   const photos: StoredPhoto[] = []
   const failed: string[] = []
 
@@ -26,7 +23,7 @@ export async function importPhotos(
       photos.push({
         id: crypto.randomUUID(),
         recordId,
-        order: photos.length,
+        order: firstOrder + photos.length,
         ...meta,
         ...compressed,
       })
@@ -34,6 +31,15 @@ export async function importPhotos(
       failed.push(file.name)
     }
   }
+  return { photos, failed }
+}
+
+export async function importPhotos(
+  files: File[],
+  note = '',
+): Promise<ImportResult> {
+  const recordId = crypto.randomUUID()
+  const { photos, failed } = await preparePhotos(files, recordId)
 
   if (photos.length === 0) return { recordId: null, imported: 0, failed }
 
@@ -58,6 +64,35 @@ export async function importPhotos(
     })
   })
   return { recordId, imported: photos.length, failed }
+}
+
+// 给已有的记录加照片、删照片（决策 0013 第 1 条）。返回处理失败的文件名。
+// 记录本身的时间和地点不跟着新照片变：否则补一张第二天拍的照片，整条记录会跳到另一次出行里去
+export async function changePhotos(
+  recordId: string,
+  removeIds: string[],
+  addFiles: File[],
+): Promise<string[]> {
+  if (removeIds.length === 0 && addFiles.length === 0) return []
+  const existing = await db.photos.where('recordId').equals(recordId).toArray()
+  const firstOrder = Math.max(-1, ...existing.map((p) => p.order)) + 1
+  // 压缩比较慢，放在事务外面做（IndexedDB 的事务等不了别的异步操作）
+  const { photos, failed } = await preparePhotos(addFiles, recordId, firstOrder)
+  const removed = existing.filter((p) => removeIds.includes(p.id))
+  if (removed.length === 0 && photos.length === 0) return failed
+
+  await db.transaction('rw', db.records, db.photos, async () => {
+    const record = await db.records.get(recordId)
+    if (!record) return
+    await db.photos.bulkDelete(removed.map((p) => p.id))
+    await db.photos.bulkAdd(photos)
+    await db.records.update(recordId, {
+      photoCount: existing.length - removed.length + photos.length,
+      // AI 整理过的记录才需要提示"要不要重新整理"
+      ...(record.content || record.aiDraft ? { photosChanged: true } : {}),
+    })
+  })
+  return failed
 }
 
 // 只写文字、没有照片的记录（决策 0013 第 4 条）：时间是写下它的这一刻，地点先空着

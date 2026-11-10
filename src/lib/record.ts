@@ -77,3 +77,18 @@ export function draftSummary(d: { files: unknown[]; note: string }): string {
     .filter(Boolean)
     .join(' · ')
 }
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+// 时间输入框（datetime-local）用的格式：本地时间的 "2026-11-10T14:05"
+export function toLocalInput(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+// 输入框被清空或内容不完整时返回 null，调用方保持原来的时间
+export function fromLocalInput(value: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return null
+  const ms = new Date(value).getTime()
+  return Number.isNaN(ms) ? null : ms
+}
