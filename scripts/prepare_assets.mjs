@@ -69,9 +69,29 @@ async function model() {
 }
 
 // ---------- 行政边界 ----------
-// 坐标保留 4 位小数（约 11 米），再用道格拉斯-普克算法按 TOL 度精简。
-// 只用来判断"在哪个省、哪个区县"和在地图上涂色，边界附近差几百米可以接受
-const round = (v) => Math.round(v * 1e4) / 1e4
+// 用道格拉斯-普克算法按 TOL 度精简，坐标精确到 1/10000 度（约 11 米）。
+// 只用来判断"在哪个省、哪个区县"和在地图上涂色，边界附近差几百米可以接受。
+//
+// 格式版本 2（决策 0016 第 5 条）：坐标乘以 SCALE 取整，每个点只存和上一个点的差值，
+// 数字短很多，文件小一半以上；解码见 src/lib/geo/pip.ts 的 decodeRegion。
+// 改格式或精简参数时，GEO_FORMAT 和 src/lib/geo/area.ts 的 GEO_VERSION 一起加 1
+const GEO_FORMAT = 2
+const SCALE = 1e4
+const round = (v) => Math.round(v * SCALE) / SCALE
+
+function encodeRing(points) {
+  const out = []
+  let px = 0
+  let py = 0
+  for (const [x, y] of points) {
+    const ix = Math.round(x * SCALE)
+    const iy = Math.round(y * SCALE)
+    out.push(ix - px, iy - py)
+    px = ix
+    py = iy
+  }
+  return out
+}
 
 function simplifyRing(points, tol) {
   if (points.length <= 4) return points
@@ -121,7 +141,8 @@ function simplifyRing(points, tol) {
   return points.filter((_, i) => keep[i])
 }
 
-// 输出格式：每个区域 { n 名称, b [西,南,东,北], g 多边形列表 }，多边形 = 环列表，环 = 扁平的 [lng,lat,lng,lat,...]
+// 输出格式：每个区域 { n 名称, b [西,南,东,北], g 多边形列表 }，多边形 = 环列表，
+// 环 = 扁平的 [dLng, dLat, dLng, dLat, ...]（第一个点是绝对值，之后是差值，都乘过 SCALE）
 function compact(geometry, tol) {
   const polys =
     geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates
@@ -138,15 +159,13 @@ function compact(geometry, tol) {
         if (i === 0) break // 外环精简没了：整个小岛丢掉
         continue
       }
-      const flat = []
       for (const [x, y] of s) {
-        flat.push(round(x), round(y))
         if (x < minX) minX = x
         if (y < minY) minY = y
         if (x > maxX) maxX = x
         if (y > maxY) maxY = y
       }
-      rings.push(flat)
+      rings.push(encodeRing(s))
     }
     if (rings.length) out.push(rings)
   }
@@ -157,8 +176,19 @@ function compact(geometry, tol) {
 async function geo() {
   const out = join(PUBLIC, 'geo')
   const admin1Out = join(out, 'admin1.json')
+  const liteOut = join(out, 'admin1-lite.json')
   const countyOut = join(out, 'cn-counties.json')
-  if (!force && (await exists(admin1Out)) && (await exists(countyOut))) return
+  const stamp = join(out, 'format.txt')
+  // 格式版本对得上、文件都在，就不重新生成
+  const current = await readFile(stamp, 'utf8').catch(() => '')
+  if (
+    !force &&
+    current.trim() === String(GEO_FORMAT) &&
+    (await exists(admin1Out)) &&
+    (await exists(liteOut)) &&
+    (await exists(countyOut))
+  )
+    return
   await mkdir(out, { recursive: true })
 
   // Natural Earth 10m 省州级，公有领域
@@ -172,6 +202,7 @@ async function geo() {
     ),
   )
   const admin1 = []
+  const lite = []
   for (const f of ne.features) {
     const p = f.properties
     const c = compact(f.geometry, 0.005)
@@ -182,14 +213,27 @@ async function geo() {
       cc: p.iso_a2 && p.iso_a2 !== '-1' ? p.iso_a2 : p.adm0_a3,
       ...c,
     })
+    // 离线底图只要个轮廓（决策 0014 第 3D 条），精简得狠一些，约 3 公里
+    const l = compact(f.geometry, 0.03)
+    if (l) lite.push(l)
   }
   await writeFile(
     admin1Out,
     JSON.stringify({
-      // 和 src/lib/geo/area.ts 的 GEO_VERSION 保持一致；改了精简参数要一起加 1
-      version: 1,
+      version: GEO_FORMAT,
+      scale: SCALE,
       source: 'Natural Earth 10m admin-1 (public domain), simplified',
       features: admin1,
+    }),
+  )
+  await writeFile(
+    liteOut,
+    JSON.stringify({
+      version: GEO_FORMAT,
+      scale: SCALE,
+      source:
+        'Natural Earth 10m admin-1 (public domain), simplified for an offline outline',
+      features: lite,
     }),
   )
 
@@ -212,12 +256,14 @@ async function geo() {
   await writeFile(
     countyOut,
     JSON.stringify({
-      version: 1,
+      version: GEO_FORMAT,
+      scale: SCALE,
       source: 'geoBoundaries gbOpen CHN ADM2 (PDDL 1.0), simplified',
       features: counties,
     }),
   )
-  for (const p of [admin1Out, countyOut])
+  await writeFile(stamp, String(GEO_FORMAT))
+  for (const p of [admin1Out, liteOut, countyOut])
     console.log(`${p}: ${((await stat(p)).size / 1e6).toFixed(1)} MB`)
 }
 

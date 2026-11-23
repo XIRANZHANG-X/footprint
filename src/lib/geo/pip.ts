@@ -1,11 +1,42 @@
 // 点在多边形里的判断，不依赖浏览器，方便测试。
-// 区域格式和 scripts/prepare_assets.mjs 的输出一致：
-//   b = [西, 南, 东, 北]，g = 多边形列表；多边形 = 环列表（第一个是外环，其余是洞）；环 = [lng, lat, lng, lat, ...]
+// 解码后的区域：b = [西, 南, 东, 北]，g = 多边形列表；多边形 = 环列表（第一个是外环，其余是洞）；
+// 环 = [lng, lat, lng, lat, ...]
 
-export type Region = { n: string; b: number[]; g: number[][][] }
+export type Ring = ArrayLike<number>
+export type Region = { n: string; b: number[]; g: Ring[][] }
+
+// 文件里的格式（scripts/prepare_assets.mjs，格式版本 2，决策 0016 第 5 条）：
+// 坐标乘以 scale 取整，每个点只存和上一个点的差值
+export type EncodedFile<T> = {
+  version: number
+  scale: number
+  features: (T & { b: number[]; g: number[][][] })[]
+}
+
+export function decodeRing(ring: number[], scale: number): Float64Array {
+  const out = new Float64Array(ring.length)
+  let x = 0
+  let y = 0
+  for (let i = 0; i < ring.length; i += 2) {
+    x += ring[i]
+    y += ring[i + 1]
+    out[i] = x / scale
+    out[i + 1] = y / scale
+  }
+  return out
+}
+
+export function decodeRegions<T>(
+  file: EncodedFile<T>,
+): (Omit<T, 'g'> & { b: number[]; g: Float64Array[][] })[] {
+  return file.features.map((f) => ({
+    ...f,
+    g: f.g.map((poly) => poly.map((ring) => decodeRing(ring, file.scale))),
+  }))
+}
 
 // 射线法：从点向东发一条射线，和环的边相交奇数次就在环里
-function inRing(ring: number[], x: number, y: number): boolean {
+function inRing(ring: Ring, x: number, y: number): boolean {
   let inside = false
   for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
     const xi = ring[i]

@@ -32,13 +32,31 @@ function mockChatReply(content: string): FetchMock {
   return fetchMock
 }
 
-function sentInit(fetchMock: FetchMock): RequestInit {
-  return fetchMock.mock.calls[0][1] ?? {}
+// 依次返回几段回复，每次都带上用量（模拟百炼的 usage 字段）
+function mockChatReplies(...contents: string[]): FetchMock {
+  let i = 0
+  const fetchMock = vi.fn<typeof fetch>(async () =>
+    Response.json({
+      choices: [
+        { message: { content: contents[Math.min(i++, contents.length - 1)] } },
+      ],
+      usage: { prompt_tokens: 1000, completion_tokens: 100 },
+    }),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
 }
 
-function sentBody(fetchMock: FetchMock) {
-  return JSON.parse(sentInit(fetchMock).body as string)
+function sentInit(fetchMock: FetchMock, call = 0): RequestInit {
+  return fetchMock.mock.calls[call][1] ?? {}
 }
+
+function sentBody(fetchMock: FetchMock, call = 0) {
+  return JSON.parse(sentInit(fetchMock, call).body as string)
+}
+
+const usageOf = (res: Response) =>
+  JSON.parse(res.headers.get('X-AI-Usage') ?? 'null') as unknown
 
 // 测试里读响应 JSON 时不关心精确类型
 async function json(res: Response): Promise<Record<string, unknown>> {
@@ -146,10 +164,17 @@ describe('AI routes', () => {
     )
     const res = await post('/describe', { note: '今天去了江边' })
     expect(res.status).toBe(200)
-    const userContent = sentBody(fetchMock).messages[1].content
-    expect(userContent).toHaveLength(1)
-    expect(userContent[0].text).toContain('今天去了江边')
-    expect(userContent[0].text).toContain('没有照片')
+    const body = sentBody(fetchMock)
+    // 没有照片：交给文字模型，按 JSON Schema 严格输出，不开思考（决策 0016 第 1、2 条）
+    expect(body.model).toBe('qwen3.7-flash')
+    expect(body.enable_thinking).toBe(false)
+    expect(body.response_format.type).toBe('json_schema')
+    expect(body.response_format.json_schema.strict).toBe(true)
+    expect(body.response_format.json_schema.schema.required).toContain('intro')
+    expect(body.response_format.json_schema.schema.$schema).toBeUndefined()
+    const userContent = body.messages[1].content as string
+    expect(userContent).toContain('今天去了江边')
+    expect(userContent).toContain('没有照片')
   })
 
   it('describe rejects a request with neither photos nor text', async () => {
@@ -267,6 +292,129 @@ describe('AI routes', () => {
       phones: ['0571-88886666'],
       plates: ['浙A12345'],
     })
+  })
+
+  it('describe with photos uses JSON object mode on the vision model, thinking off', async () => {
+    const fetchMock = mockChatReply(
+      '{"title":"t","category":"美食","intro":"i","tags":[],"placeGuess":null}',
+    )
+    await post('/describe', { images: [IMG], note: '面' })
+    const body = sentBody(fetchMock)
+    expect(body.model).toBe('qwen3-vl-plus')
+    expect(body.response_format).toEqual({ type: 'json_object' })
+    expect(body.enable_thinking).toBe(false)
+    // JSON Object 模式要求提示词里出现 "JSON"
+    expect(JSON.stringify(body.messages)).toContain('JSON')
+  })
+
+  it('describe repairs a bad reply once with the text model, without resending photos', async () => {
+    const longTitle = '很'.repeat(60)
+    const fetchMock = mockChatReplies(
+      `{"title":"${longTitle}","category":"美食","intro":"吃了面","tags":[],"placeGuess":null}`,
+      '{"title":"一碗面","category":"美食","intro":"吃了面","tags":[],"placeGuess":null,"clues":{"phones":[],"plates":[]}}',
+    )
+    const res = await post('/describe', { images: [IMG], note: '吃了面' })
+    expect(res.status).toBe(200)
+    expect((await json(res)).title).toBe('一碗面')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const fix = sentBody(fetchMock, 1)
+    expect(fix.model).toBe('qwen3.7-flash')
+    expect(fix.response_format.type).toBe('json_schema')
+    expect(JSON.stringify(fix.messages)).not.toContain('image_url')
+    expect(fix.messages[1].content).toContain('title')
+    // 两次调用的用量都在响应头里
+    expect(usageOf(res)).toEqual([
+      {
+        model: 'qwen3-vl-plus',
+        inputTokens: 1000,
+        outputTokens: 100,
+        seconds: null,
+      },
+      {
+        model: 'qwen3.7-flash',
+        inputTokens: 1000,
+        outputTokens: 100,
+        seconds: null,
+      },
+    ])
+  })
+
+  it('describe gives up after one failed repair', async () => {
+    const fetchMock = mockChatReplies('不是 JSON', '还是不是 JSON')
+    const res = await post('/describe', { images: [IMG] })
+    expect(res.status).toBe(502)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(usageOf(res)).toHaveLength(2)
+  })
+
+  it('describe passes the words to avoid to the model', async () => {
+    const fetchMock = mockChatReply(
+      '{"title":"t","category":"美食","intro":"i","tags":[],"placeGuess":null}',
+    )
+    await post('/describe', {
+      images: [IMG],
+      avoidWords: ['热气腾腾', '38 元'],
+    })
+    const system = sentBody(fetchMock).messages[0].content as string
+    expect(system).toContain('热气腾腾、38 元')
+  })
+
+  it('suggest and summarize use the text model with thinking off', async () => {
+    const fetchMock = mockChatReplies('- 不写感叹句', '先去了西湖。')
+    await post('/preferences/suggest', {
+      current: '',
+      edits: [
+        {
+          draft: { title: 'a', intro: 'b' },
+          final: { title: 'c', intro: 'd' },
+        },
+      ],
+    })
+    await post('/summarize', { items: [{ date: '11月3日', title: '西湖' }] })
+    for (const call of [0, 1]) {
+      expect(sentBody(fetchMock, call).model).toBe('qwen3.7-flash')
+      expect(sentBody(fetchMock, call).enable_thinking).toBe(false)
+    }
+  })
+
+  it('transcribe reports the audio seconds in the usage header', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          choices: [{ message: { content: '你好' } }],
+          usage: { prompt_tokens: 42, completion_tokens: 2, seconds: 3 },
+        }),
+      ),
+    )
+    const res = await post('/transcribe', { audio: WAV })
+    expect(usageOf(res)).toEqual([
+      {
+        model: 'qwen3-asr-flash',
+        inputTokens: 42,
+        outputTokens: 2,
+        seconds: 3,
+      },
+    ])
+  })
+
+  it('lets the app read the usage header across origins', async () => {
+    mockChatReply('你好')
+    const res = await app.request(
+      '/api/transcribe',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://localhost',
+        },
+        body: JSON.stringify({ audio: WAV }),
+      },
+      ENV,
+    )
+    expect(res.headers.get('Access-Control-Expose-Headers')).toContain(
+      'X-AI-Usage',
+    )
   })
 
   it('describe returns 502 when the model reply is not valid JSON', async () => {

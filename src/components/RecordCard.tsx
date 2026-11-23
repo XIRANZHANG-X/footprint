@@ -351,15 +351,17 @@ export function RecordCard({
   const hasAiBody = (content?.intro ?? '').trim() !== ''
   const usesOwn = record.bodySource === 'own'
 
-  const regenerate = () => {
+  // avoid：这次额外不要写的词（卡片上被标出来的那些，决策 0016 第 4 条）
+  const regenerate = (avoid: string[] = []) => {
     const edited =
       !usesOwn &&
       content !== null &&
       record.aiDraft !== null &&
       content.intro !== record.aiDraft.intro
     if (edited && !confirm('重新生成会替换你改过的正文，继续吗？')) return
-    void enrichRecord(record.id, { overwrite: true })
+    void enrichRecord(record.id, { overwrite: true, avoid })
   }
+  const flags = record.aiFlags ?? []
 
   return (
     <article className="px-card p-3">
@@ -441,6 +443,41 @@ export function RecordCard({
               <Thumb blob={p.thumb} />
             </button>
           ))}
+        </div>
+      )}
+
+      {/* AI 写了原话里没有的东西：只提醒，重写要用户点（决策 0016 第 4 条） */}
+      {!editing && !busy && !choosing && flags.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-2 border-dashed border-ink bg-lemon p-2 text-sm">
+          <span className="w-full">
+            AI 写了你没说过的：
+            {flags.map((f, i) => (
+              <span key={f}>
+                {i > 0 && '、'}
+                <mark className="bg-berry px-0.5 text-ink">{f}</mark>
+              </span>
+            ))}
+          </span>
+          <button
+            type="button"
+            className="px-btn px-btn-sm bg-mint"
+            onClick={() =>
+              usesOwn
+                ? void enrichRecord(record.id, { mode: 'meta', avoid: flags })
+                : regenerate(flags)
+            }
+          >
+            去掉这些重写
+          </button>
+          <button
+            type="button"
+            className="px-btn px-btn-sm"
+            onClick={() =>
+              void db.records.update(record.id, { aiFlags: undefined })
+            }
+          >
+            没关系
+          </button>
         </div>
       )}
 
@@ -550,7 +587,7 @@ export function RecordCard({
           <button
             type="button"
             className="px-btn px-btn-sm bg-mint"
-            onClick={regenerate}
+            onClick={() => regenerate()}
           >
             {hasAiBody ? '重新生成' : '让 AI 写一版'}
           </button>

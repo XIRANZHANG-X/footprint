@@ -1,6 +1,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { z } from 'zod'
 import type { EditEntry, JournalRecord, Setting, StoredPhoto } from '../db.ts'
+import type { AiCall } from './usage.ts'
 
 // 备份文件格式（zip）：
 //   manifest.json      记录和照片的元数据，以及修改记录和设置（偏好说明等）
@@ -48,10 +49,18 @@ const manifestSchema = z.object({
   settings: z
     .array(z.object({ key: z.string(), value: z.unknown() }))
     .default([]),
+  // AI 用量（决策 0016 第 3 条），同样是后来加的
+  aiCalls: z
+    .array(z.object({ id: z.string(), at: z.number() }).loose())
+    .default([]),
 })
 
 // 修改记录和设置：学到的写作习惯也要能跟着备份走（决策 0012）
-export type BackupExtras = { edits: EditEntry[]; settings: Setting[] }
+export type BackupExtras = {
+  edits: EditEntry[]
+  settings: Setting[]
+  aiCalls?: AiCall[]
+}
 
 const photoPath = (id: string) => `photos/${id}.jpg`
 const thumbPath = (id: string) => `thumbs/${id}.jpg`
@@ -92,6 +101,7 @@ export function unpackBackup(bytes: Uint8Array): {
   photos: PhotoBytes[]
   edits: EditEntry[]
   settings: Setting[]
+  aiCalls: AiCall[]
 } {
   let files: Record<string, Uint8Array>
   try {
@@ -119,5 +129,6 @@ export function unpackBackup(bytes: Uint8Array): {
     photos,
     edits: manifest.edits as unknown as EditEntry[],
     settings: manifest.settings as Setting[],
+    aiCalls: manifest.aiCalls as unknown as AiCall[],
   }
 }

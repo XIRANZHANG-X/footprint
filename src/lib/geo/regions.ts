@@ -8,14 +8,19 @@ import {
   type ClueCity,
   type PrefixTable,
 } from './cnTables.ts'
-import { locate, type Region } from './pip.ts'
+import type {
+  GeoRequest,
+  GeoResponse,
+  LocatedArea,
+  Shape,
+} from './geo.worker.ts'
+import { decodeRegions, type EncodedFile } from './pip.ts'
 
-// 行政边界和查表数据都是几 MB 的静态文件（决策 0014），只在需要时加载一次。
-// 这个模块本身也是按需 import 的，不进首屏代码。
+// 行政边界和查表数据（决策 0014），只在需要时加载。这个模块本身也是按需 import 的，不进首屏代码。
+// 几 MB 的边界数据交给后台线程（geo.worker.ts，决策 0016 第 5 条），这里只发问题、收答案；
+// 一百多 KB 的查表数据和离线底图的轮廓在这里直接读
 
 const BASE = import.meta.env.BASE_URL
-
-export type Admin1Region = Region & { en: string; cc: string }
 
 const cache = new Map<string, Promise<unknown>>()
 function load<T>(path: string): Promise<T> {
@@ -32,10 +37,6 @@ function load<T>(path: string): Promise<T> {
   return p as Promise<T>
 }
 
-export const loadAdmin1 = () =>
-  load<{ features: Admin1Region[] }>('geo/admin1.json').then((d) => d.features)
-export const loadCounties = () =>
-  load<{ features: Region[] }>('geo/cn-counties.json').then((d) => d.features)
 const loadAdmin = () =>
   load<{ items: AdminItem[] }>('data/cn/admin.json').then((d) => d.items)
 const loadPhones = () => load<PrefixTable>('data/cn/area_codes.json')
@@ -44,28 +45,69 @@ const loadPlates = () => load<PrefixTable>('data/cn/plates.json')
 let cities: Promise<Set<string>> | null = null
 const cityNameSet = () => (cities ??= loadAdmin().then(cityNames))
 
-export async function locateArea(
-  lat: number,
-  lng: number,
-): Promise<Area | null> {
-  const admin1 = await loadAdmin1()
-  const i = locate(admin1, lat, lng)
-  if (i < 0) return null
-  const r = admin1[i]
-  let county: number | null = null
-  if (r.cc === 'CN') {
-    const c = locate(await loadCounties(), lat, lng)
-    county = c < 0 ? null : c
+// ---------- 后台线程 ----------
+
+type Request =
+  | { op: 'locate'; points: { lat: number; lng: number }[] }
+  | { op: 'shapes'; a1: number[]; cn: number[] }
+
+let worker: Worker | null = null
+let nextId = 1
+const waiting = new Map<
+  number,
+  { resolve: (r: GeoResponse) => void; reject: (e: Error) => void }
+>()
+
+function ask(req: Request): Promise<GeoResponse> {
+  if (!worker) {
+    worker = new Worker(new URL('./geo.worker.ts', import.meta.url), {
+      type: 'module',
+    })
+    worker.onmessage = (e: MessageEvent<GeoResponse>) => {
+      const w = waiting.get(e.data.id)
+      if (!w) return
+      waiting.delete(e.data.id)
+      if ('error' in e.data) w.reject(new Error(e.data.error))
+      else w.resolve(e.data)
+    }
+    worker.onerror = (e) => {
+      for (const w of waiting.values())
+        w.reject(new Error(e.message || '读取边界数据出错'))
+      waiting.clear()
+      worker?.terminate()
+      worker = null
+    }
   }
-  return {
-    key: areaKey({ lat, lng }),
-    gv: GEO_VERSION,
-    cc: r.cc,
-    admin1: r.n || r.en,
-    a1: i,
-    county,
-  }
+  const id = nextId++
+  return new Promise((resolve, reject) => {
+    waiting.set(id, { resolve, reject })
+    worker!.postMessage({ ...req, id } satisfies GeoRequest)
+  })
 }
+
+// 一批坐标各在哪个区域，一次问完
+export async function locateMany(
+  points: { lat: number; lng: number }[],
+): Promise<(LocatedArea | null)[]> {
+  if (points.length === 0) return []
+  const r = await ask({ op: 'locate', points })
+  return 'areas' in r ? r.areas : []
+}
+
+// 地图点亮时只要用得到的那几个形状（决策 0014 第 3D 条）
+export async function regionShapes(
+  a1: number[],
+  cn: number[],
+): Promise<{ a1: Shape[]; cn: Shape[] }> {
+  const r = await ask({ op: 'shapes', a1, cn })
+  return 'a1' in r ? { a1: r.a1, cn: r.cn } : { a1: [], cn: [] }
+}
+
+// 离线底图用的省州轮廓（精简得很狠，两 MB），只在在线瓦片加载失败时用
+export const loadOutline = () =>
+  load<EncodedFile<object>>('geo/admin1-lite.json').then(decodeRegions)
+
+// ---------- 补算记录的区域和城市 ----------
 
 let running: Promise<void> | null = null
 
@@ -76,26 +118,37 @@ export function backfillGeo(): Promise<void> {
     try {
       const todo = (await db.records.toArray()).filter(needsGeo)
       if (todo.length === 0) return
-      const names = await cityNameSet()
+      // 坐标变了或数据版本变了的才需要重新判断区域
+      const relocate = todo.filter(
+        (r) =>
+          !r.area ||
+          r.area.gv !== GEO_VERSION ||
+          r.area.key !== areaKey(r.location!),
+      )
+      const [names, located] = await Promise.all([
+        cityNameSet(),
+        locateMany(relocate.map((r) => r.location!)),
+      ])
+      const fresh = new Map(
+        relocate.map((r, i) => {
+          const a = located[i]
+          const area: Area | null = a
+            ? { ...a, key: areaKey(r.location!), gv: GEO_VERSION }
+            : null
+          return [r.id, area]
+        }),
+      )
       for (const r of todo) {
         const loc = r.location!
-        const fresh = await db.records.get(r.id)
-        if (!fresh || !needsGeo(fresh)) continue
-        const area =
-          fresh.area &&
-          fresh.area.gv === GEO_VERSION &&
-          fresh.area.key === areaKey(loc)
-            ? fresh.area
-            : await locateArea(loc.lat, loc.lng)
         await db.records
           .where('id')
           .equals(r.id)
           .modify((x: JournalRecord) => {
             // 坐标在这期间又被改了：下一轮再算
             if (!x.location || areaKey(x.location) !== areaKey(loc)) return
-            x.area = area
+            if (fresh.has(r.id)) x.area = fresh.get(r.id)
             x.geoCity ??=
-              area?.cc === 'CN' ? cityFromPlaceName(x.placeName, names) : null
+              x.area?.cc === 'CN' ? cityFromPlaceName(x.placeName, names) : null
           })
       }
     } finally {

@@ -1,9 +1,14 @@
-import { MAX_AI_IMAGES, type DescribeMode } from '../../shared/ai.ts'
+import {
+  MAX_AI_IMAGES,
+  MAX_AVOID_WORDS,
+  type DescribeMode,
+} from '../../shared/ai.ts'
 import { db, type RecordContent } from '../db.ts'
 import { describe, geocode, placeLabel } from './ai.ts'
 import { logEdit } from './editLog.ts'
+import { unfaithfulBits } from './faithful.ts'
 import { toAiDataUrl } from './image.ts'
-import { styleForRequest } from './preferences.ts'
+import { styleForRequest, watchWords } from './preferences.ts'
 
 const elapsed = (since: number) => Math.round(performance.now() - since)
 
@@ -12,13 +17,15 @@ export type EnrichOptions = {
   overwrite?: boolean
   // full：完整整理；meta：正文用用户自己写的，只补标题、类别、标签（决策 0012）
   mode?: DescribeMode
+  // 这次额外不要写的词：卡片上被标出来、用户点了"重写"的那些（决策 0016 第 4 条）
+  avoid?: string[]
 }
 
 // 记录保存之后在后台补全：GPS → 地名，照片 + 原话 → 标题/正文/标签。
 // 失败不影响记录本身（照片和原话已经存好了），只把状态标成 error，可以重试。
 export async function enrichRecord(
   recordId: string,
-  { overwrite = false, mode = 'full' }: EnrichOptions = {},
+  { overwrite = false, mode = 'full', avoid = [] }: EnrichOptions = {},
 ) {
   const record = await db.records.get(recordId)
   if (!record) return
@@ -51,12 +58,16 @@ export async function enrichRecord(
       )
       return { images, ms: elapsed(t) }
     }
-    const [place, shrunk, style] = await Promise.all([
+    const [place, shrunk, style, watch] = await Promise.all([
       lookupPlace(),
       shrinkPhotos(),
       // 偏好说明每次都带；例子只在写正文时带（决策 0012）
       styleForRequest(mode === 'full'),
+      watchWords(),
     ])
+    const avoidWords = [
+      ...new Set([...avoid, ...(style.avoidWords ?? [])]),
+    ].slice(0, MAX_AVOID_WORDS)
 
     const modelStarted = performance.now()
     const draft = await describe({
@@ -67,8 +78,16 @@ export async function enrichRecord(
       placeName: place.placeName,
       mode,
       ...style,
+      avoidWords: avoidWords.length > 0 ? avoidWords : undefined,
     })
     const modelMs = elapsed(modelStarted)
+
+    // 检查这次写的东西（决策 0016 第 4 条）：只补标题时只看标题，正文是用户自己的
+    const flags = unfaithfulBits(
+      { title: draft.title, intro: mode === 'meta' ? '' : draft.intro },
+      { note: record.note, placeName: place.placeName },
+      watch,
+    )
 
     const meta = {
       title: draft.title,
@@ -86,6 +105,8 @@ export async function enrichRecord(
       placeGuess: draft.placeGuess,
       aiStatus: 'done',
       photosChanged: false,
+      // 没有要提醒的就把字段删掉（undefined 在 Dexie 里等于删除）
+      aiFlags: flags.length > 0 ? flags : undefined,
       aiTimings: {
         mode,
         geocodeMs: place.ms,
@@ -152,14 +173,16 @@ export function saveContent(
       return
     }
     const next = { ...content, intro: body }
-    await db.records.update(recordId, {
-      content: next,
-      ...(note === undefined ? {} : { note: note.trim() }),
-    })
     // 这次保存没动标题和正文（比如只改了时间或地名）就不记：否则会被当成一次"改动 0%"的修改
     const textChanged =
       next.title !== record.content?.title ||
       next.intro !== record.content?.intro
+    await db.records.update(recordId, {
+      content: next,
+      ...(note === undefined ? {} : { note: note.trim() }),
+      // 用户自己改过标题或正文，AI 写的那些提醒就过时了
+      ...(textChanged ? { aiFlags: undefined } : {}),
+    })
     if (record.aiDraft && textChanged)
       await logEdit(recordId, record.aiDraft, next)
   })
@@ -181,6 +204,8 @@ export function chooseBody(
         note: text,
         bodySource: 'own',
         choosing: false,
+        // 不用 AI 写的正文了，针对它的提醒也就不需要了
+        aiFlags: undefined,
       })
       // 放弃 AI 版本是最强的"不满意"信号，记下来
       if (record.aiDraft && content)

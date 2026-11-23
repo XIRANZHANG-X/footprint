@@ -35,6 +35,8 @@ export const styleExample = z.object({ draft: styleText, final: styleText })
 export type StyleExample = z.infer<typeof styleExample>
 
 export const MAX_PREFERENCES_CHARS = 600
+export const MAX_AVOID_WORDS = 40
+export const MAX_AVOID_WORD_CHARS = 12
 
 export const describeRequest = z
   .object({
@@ -50,28 +52,74 @@ export const describeRequest = z
     // 用户的偏好说明，和最近几次修改的例子（少样本提示）。都只在这次请求里用，服务端不保存
     preferences: z.string().max(MAX_PREFERENCES_CHARS).optional(),
     examples: z.array(styleExample).max(3).optional(),
+    // 不要用的词：用户反复删掉的词，加上"重写"时被标出来的词（决策 0016 第 4 条）
+    avoidWords: z
+      .array(z.string().min(1).max(MAX_AVOID_WORD_CHARS))
+      .max(MAX_AVOID_WORDS)
+      .optional(),
   })
   // 照片和文字至少要有一样，否则没有东西可整理
   .refine((r) => r.images.length > 0 || r.note.trim() !== '')
 export type DescribeRequest = z.input<typeof describeRequest>
 
+// 整理结果每个字段的约束，只写这一处（决策 0016 第 1 条）：
+// 下面的"给模型的格式"和"校验模型回复"都从这里来
+const field = {
+  title: z.string().min(1).max(40),
+  category: z.enum(CATEGORIES),
+  intro: z.string().max(300),
+  tags: z.array(z.string().max(12)).max(5),
+  placeGuess: z.string().max(60).nullable(),
+  phones: z.array(z.string().max(30)).max(5),
+  plates: z.array(z.string().max(12)).max(5),
+}
+
+// 交给模型的格式（JSON Schema 模式）：每个字段都必填、不许多字段。
+// meta 模式不写正文，格式里也就没有 intro
+export function descriptionContract(mode: DescribeMode) {
+  const clues = z.strictObject({ phones: field.phones, plates: field.plates })
+  const { intro, ...rest } = {
+    title: field.title,
+    category: field.category,
+    intro: field.intro,
+    tags: field.tags,
+    placeGuess: field.placeGuess,
+  }
+  return z.strictObject(
+    mode === 'meta' ? { ...rest, clues } : { ...rest, intro, clues },
+  )
+}
+
 // 照片里读到的电话号码和车牌（决策 0014 补充，借自 geo-sleuth）：模型只抄字，城市由前端查表得出
 export const photoClues = z.object({
-  phones: z.array(z.string().max(30)).max(5).catch([]),
-  plates: z.array(z.string().max(12)).max(5).catch([]),
+  phones: field.phones.catch([]),
+  plates: field.plates.catch([]),
 })
 export type PhotoClues = z.infer<typeof photoClues>
 
+// 校验模型回复：比交给模型的格式宽松，不影响使用的小错就地纠正（类别不认识就归"其他"等），
+// 标题、正文这种纠正不了的，才交给服务端修一次（决策 0016 第 1 条）
 export const description = z.object({
-  title: z.string().min(1).max(40),
-  category: z.enum(CATEGORIES).catch('其他'),
-  intro: z.string().max(300),
-  tags: z.array(z.string().max(12)).max(5).catch([]),
-  placeGuess: z.string().max(60).nullable().catch(null),
+  title: field.title,
+  category: field.category.catch('其他'),
+  intro: field.intro,
+  tags: field.tags.catch([]),
+  placeGuess: field.placeGuess.catch(null),
   // 后来加的字段：旧记录的 aiDraft 里没有它
   clues: photoClues.optional().catch(undefined),
 })
 export type Description = z.infer<typeof description>
+
+// 每次调用百炼用了多少（决策 0016 第 3 条）。放在响应头 X-AI-Usage 里，不改响应正文：
+// 旧版 App 不认识它也不受影响。语音识别按秒计费，其余按 token
+export const AI_USAGE_HEADER = 'X-AI-Usage'
+export const aiUsage = z.object({
+  model: z.string(),
+  inputTokens: z.number().nullable(),
+  outputTokens: z.number().nullable(),
+  seconds: z.number().nullable(),
+})
+export type AiUsage = z.infer<typeof aiUsage>
 
 export const geocodeResponse = z.object({
   name: z.string().nullable(),

@@ -1,4 +1,6 @@
 import {
+  AI_USAGE_HEADER,
+  aiUsage,
   description,
   geocodeResponse,
   placeSearchResponse,
@@ -10,8 +12,10 @@ import {
   type StyleExample,
   type SummarizeRequest,
 } from '../../shared/ai.ts'
-import type { z } from 'zod'
+import { z } from 'zod'
+import { db } from '../db.ts'
 import { getAccessToken, setAccessToken } from './storage.ts'
+import type { AiCallKind } from './usage.ts'
 
 export class ApiError extends Error {}
 
@@ -28,17 +32,54 @@ function withToken(init: RequestInit = {}): RequestInit {
   return { ...init, headers }
 }
 
+// 会花钱的接口，每次调用都记一行用量（决策 0016 第 3 条）；查地名不花百炼的钱，不记
+const AI_KINDS: Record<string, AiCallKind> = {
+  '/transcribe': 'transcribe',
+  '/describe': 'describe',
+  '/preferences/suggest': 'suggest',
+  '/summarize': 'summarize',
+}
+
+const usageList = z.array(aiUsage)
+
+// 记账失败（比如存储空间满了）不影响这次调用本身
+function logCall(kind: AiCallKind, started: number, res: Response | null) {
+  let usage: z.infer<typeof usageList> = []
+  try {
+    const parsed = usageList.safeParse(
+      JSON.parse(res?.headers.get(AI_USAGE_HEADER) ?? '[]'),
+    )
+    if (parsed.success) usage = parsed.data
+  } catch {
+    // 旧版服务端没有这个头，或者头的内容不对：只记次数和耗时
+  }
+  void db.aiCalls
+    .add({
+      id: crypto.randomUUID(),
+      at: Date.now(),
+      kind,
+      ok: res?.ok ?? false,
+      ms: Math.round(performance.now() - started),
+      usage,
+    })
+    .catch(() => {})
+}
+
 async function call<T>(
   path: string,
   schema: z.ZodType<T>,
   init?: RequestInit,
 ): Promise<T> {
+  const kind = AI_KINDS[path]
+  const started = performance.now()
   let res: Response
   try {
     res = await fetch(`${API}${path}`, withToken(init))
   } catch {
+    if (kind) logCall(kind, started, null)
     throw new ApiError('连不上服务端')
   }
+  if (kind) logCall(kind, started, res)
   const body: unknown = await res.json().catch(() => null)
   if (res.status === 401) {
     // 口令被换掉了：清掉旧的，下次打开页面会重新要求输入

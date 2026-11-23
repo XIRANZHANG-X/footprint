@@ -1,6 +1,7 @@
 import { Dexie, type EntityTable } from 'dexie'
 import type { DescribeMode, Description } from '../shared/ai.ts'
 import type { Area } from './lib/geo/area.ts'
+import type { AiCall } from './lib/usage.ts'
 import type { LatLng, TimeSource } from './lib/photoMeta.ts'
 import type { LocationStatus } from './lib/record.ts'
 import type { TripBreak } from './lib/trips.ts'
@@ -53,6 +54,9 @@ export type JournalRecord = {
   area?: Area | null
   // 所在城市（中国是地级市）：来自地名查询，旧记录从地名文字里拆。undefined = 还没确定
   geoCity?: string | null
+  // AI 这次写的标题、正文里，原话没有的数字和"添油加醋"的词（决策 0016 第 4 条）。
+  // 卡片上提醒，用户点"没关系"或者自己改过之后清掉
+  aiFlags?: string[]
 }
 
 // 修改记录（决策 0012 第 1 条）："AI 原稿 → 用户改后的版本"，学习用户写作习惯的原料。
@@ -106,6 +110,7 @@ export const db = new Dexie('footprint-journal') as Dexie & {
   settings: EntityTable<Setting, 'key'>
   drafts: EntityTable<Draft, 'id'>
   embeddings: EntityTable<Embedding, 'recordId'>
+  aiCalls: EntityTable<AiCall, 'id'>
 }
 
 db.version(1).stores({
@@ -180,4 +185,15 @@ db.version(6).stores({
   settings: 'key',
   drafts: 'id',
   embeddings: 'recordId',
+})
+
+// v7（决策 0016 第 3 条）：每次调用 AI 记一行（用了多少 token、多久、成没成功），只在本机，会进备份
+db.version(7).stores({
+  records: 'id, takenAt',
+  photos: 'id, recordId',
+  edits: 'id, recordId, at',
+  settings: 'key',
+  drafts: 'id',
+  embeddings: 'recordId',
+  aiCalls: 'id, at',
 })

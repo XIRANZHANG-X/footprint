@@ -44,8 +44,14 @@ export function describeSystem(
   mode: DescribeMode,
   preferences?: string,
   examples: StyleExample[] = [],
+  avoidWords: string[] = [],
 ): string {
   const parts = [mode === 'meta' ? META_SYSTEM : FULL_SYSTEM]
+  // 不要用的词（决策 0016 第 4 条）：用户以前反复删掉的，或者上次被标出来、用户点了"重写"的
+  if (avoidWords.length > 0)
+    parts.push(
+      `下面这些词语这位用户以前删掉过，或者原话里没有，这次不要写：${avoidWords.join('、')}`,
+    )
   if (preferences?.trim())
     parts.push(
       `这位用户对写法有自己的要求，和上面的要求冲突时以这里为准：\n${preferences.trim()}`,
@@ -121,4 +127,19 @@ export function describeUserText(req: DescribeRequest): string {
   if (req.takenAt) lines.push(`拍摄时间：${timeFmt.format(req.takenAt)}`)
   if (req.placeName) lines.push(`GPS 对应的地址：${req.placeName}`)
   return lines.join('\n')
+}
+
+// 回复不合格式时修一次（决策 0016 第 1 条）：只把那段回复和问题发给文字模型，不重发照片。
+// 只改格式和长度，不改意思
+export const REPAIR_SYSTEM = `你负责修正一段 JSON。我会给你一段手账记录的 JSON 和它不合要求的地方。
+请只修正这些问题（例如标题太长就缩短，缺的字段补上），其余内容和意思保持不变，只输出修正后的 JSON 对象。`
+
+export function repairUserText(reply: string, problems: string[]): string {
+  return [
+    '不合要求的地方：',
+    ...problems.map((p) => `- ${p}`),
+    '',
+    '原来的回复：',
+    reply.slice(0, 3000),
+  ].join('\n')
 }

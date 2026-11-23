@@ -7,11 +7,12 @@ import { setLastBackupAt } from './storage.ts'
 const bytes = async (b: Blob) => new Uint8Array(await b.arrayBuffer())
 
 export async function exportBackup(): Promise<{ blob: Blob; name: string }> {
-  const [records, photos, edits, settings] = await Promise.all([
+  const [records, photos, edits, settings, aiCalls] = await Promise.all([
     db.records.toArray(),
     db.photos.toArray(),
     db.edits.toArray(),
     db.settings.toArray(),
+    db.aiCalls.toArray(),
   ])
   const photoBytes = await Promise.all(
     photos.map(async (p) => ({
@@ -21,7 +22,11 @@ export async function exportBackup(): Promise<{ blob: Blob; name: string }> {
     })),
   )
   const now = Date.now()
-  const zip = packBackup(records, photoBytes, now, { edits, settings })
+  const zip = packBackup(records, photoBytes, now, {
+    edits,
+    settings,
+    aiCalls,
+  })
   setLastBackupAt(now)
   const d = new Date(now)
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -66,12 +71,13 @@ export async function importBackup(file: File) {
   }))
   await db.transaction(
     'rw',
-    [db.records, db.photos, db.edits, db.settings],
+    [db.records, db.photos, db.edits, db.settings, db.aiCalls],
     async () => {
       await db.records.bulkPut(data.records.map(withDefaults))
       await db.photos.bulkPut(photos)
       await db.edits.bulkPut(data.edits)
       await db.settings.bulkPut(data.settings)
+      await db.aiCalls.bulkPut(data.aiCalls)
     },
   )
   return {

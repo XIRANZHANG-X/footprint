@@ -2,7 +2,10 @@ import { Hono, type MiddlewareHandler } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
 import { timingSafeEqual } from 'hono/utils/buffer'
+import { z } from 'zod'
 import {
+  AI_USAGE_HEADER,
+  descriptionContract,
   describeRequest,
   description,
   MAX_PLACE_QUERY_CHARS,
@@ -10,11 +13,15 @@ import {
   suggestRequest,
   summarizeRequest,
   transcribeRequest,
+  type AiUsage,
+  type Description,
+  type DescribeMode,
 } from '../shared/ai.ts'
 import {
   chat,
   dashscopeConfig,
-  extractJsonObject,
+  parseJsonReply,
+  THINKING_OFF,
   UpstreamError,
 } from './dashscope.ts'
 import type { Env } from './env.ts'
@@ -22,6 +29,8 @@ import { reverseGeocode, searchPlaces } from './geocode.ts'
 import {
   describeSystem,
   describeUserText,
+  REPAIR_SYSTEM,
+  repairUserText,
   SUGGEST_SYSTEM,
   suggestUserText,
   summarySystem,
@@ -29,6 +38,49 @@ import {
 } from './prompts.ts'
 
 type AppEnv = { Bindings: Env }
+
+// 纯文字请求用 JSON Schema 模式，严格按格式输出（决策 0016 第 1 条）。
+// 带照片的请求百炼只支持 JSON Object 模式（传 json_schema 也会被降级），格式靠提示词和下面的校验
+function schemaFormat(mode: DescribeMode) {
+  const { $schema: _drop, ...schema } = z.toJSONSchema(
+    descriptionContract(mode),
+  )
+  return {
+    type: 'json_schema',
+    json_schema: { name: 'journal_record', strict: true, schema },
+  }
+}
+const JSON_OBJECT = { type: 'json_object' } as const
+
+type Parsed =
+  { ok: true; value: Description } | { ok: false; problems: string[] }
+
+// 解析并校验模型的回复。meta 模式下模型不写正文；万一它还是写了，也不采用
+export function parseDescription(text: string, mode: DescribeMode): Parsed {
+  let raw: unknown
+  try {
+    raw = parseJsonReply(text)
+  } catch {
+    return { ok: false, problems: ['不是合法的 JSON 对象'] }
+  }
+  const result = description.safeParse(
+    mode === 'meta' && raw && typeof raw === 'object'
+      ? { ...raw, intro: '' }
+      : raw,
+  )
+  if (result.success) return { ok: true, value: result.data }
+  return {
+    ok: false,
+    problems: result.error.issues.map(
+      (i) => `${i.path.join('.') || '整体'}：${i.message}`,
+    ),
+  }
+}
+
+// 这次请求一共调用了几次、各用了多少，写进响应头（决策 0016 第 3 条）
+function usageHeader(usages: AiUsage[]) {
+  return { [AI_USAGE_HEADER]: JSON.stringify(usages) }
+}
 
 export type AppOptions = {
   // true：没配置 ACCESS_TOKEN 时拒绝所有受保护接口（线上 Worker 用）。
@@ -50,6 +102,8 @@ export function createApp({ requireAccessToken }: AppOptions) {
       origin: ['https://localhost', 'capacitor://localhost'],
       allowMethods: ['GET', 'POST'],
       allowHeaders: ['Authorization', 'Content-Type'],
+      // App 的页面和接口不同源，要显式放行，前端才读得到用量（决策 0016 第 3 条）
+      exposeHeaders: [AI_USAGE_HEADER],
       maxAge: 86400,
     }),
   )
@@ -97,7 +151,7 @@ export function createApp({ requireAccessToken }: AppOptions) {
     const parsed = transcribeRequest.safeParse(await c.req.json())
     if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
     const config = dashscopeConfig(c.env)
-    const text = await chat(config, {
+    const { text, usage } = await chat(config, {
       model: config.asrModel,
       messages: [
         {
@@ -110,7 +164,7 @@ export function createApp({ requireAccessToken }: AppOptions) {
       // 非 OpenAI 标准参数，放在请求体顶层；开启 ITN 把"三点半"写成"3:30"这类形式
       asr_options: { enable_itn: true },
     })
-    return c.json({ text: text.trim() })
+    return c.json({ text: text.trim() }, 200, usageHeader([usage]))
   })
 
   app.post('/describe', checkAccess, limit, requireKey, async (c) => {
@@ -118,41 +172,65 @@ export function createApp({ requireAccessToken }: AppOptions) {
     if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
     const req = parsed.data
     const config = dashscopeConfig(c.env)
-    const reply = await chat(config, {
-      model: config.vlModel,
+    const hasImages = req.images.length > 0
+    const system = describeSystem(
+      req.mode,
+      req.preferences,
+      req.examples,
+      req.avoidWords,
+    )
+    const usages: AiUsage[] = []
+
+    // 有照片才用看图模型；只写文字的记录交给文字模型，并按 JSON Schema 严格输出（决策 0016 第 1、2 条）
+    const first = await chat(config, {
+      model: hasImages ? config.vlModel : config.textModel,
+      ...THINKING_OFF,
+      response_format: hasImages ? JSON_OBJECT : schemaFormat(req.mode),
       messages: [
-        {
-          role: 'system',
-          content: describeSystem(req.mode, req.preferences, req.examples),
-        },
-        {
-          role: 'user',
-          content: [
-            ...req.images.map((url) => ({
-              type: 'image_url',
-              image_url: { url },
-            })),
-            { type: 'text', text: describeUserText(req) },
-          ],
-        },
+        { role: 'system', content: system },
+        hasImages
+          ? {
+              role: 'user',
+              content: [
+                ...req.images.map((url) => ({
+                  type: 'image_url',
+                  image_url: { url },
+                })),
+                { type: 'text', text: describeUserText(req) },
+              ],
+            }
+          : { role: 'user', content: describeUserText(req) },
       ],
     })
-    let result
-    try {
-      const raw = extractJsonObject(reply)
-      // meta 模式下模型不写正文；万一它还是写了，也不采用
-      result = description.parse(
-        req.mode === 'meta' && raw && typeof raw === 'object'
-          ? { ...raw, intro: '' }
-          : raw,
-      )
-    } catch {
-      return c.json(
-        { error: '模型返回的内容无法解析', raw: reply.slice(0, 300) },
-        502,
-      )
+    usages.push(first.usage)
+    let result = parseDescription(first.text, req.mode)
+
+    // 不合格式就修一次：只把回复和问题发给文字模型，不重发照片，快而且便宜。
+    // 只修一次，修不好照旧报错，用户可以点重试（决策 0016 第 1 条）
+    if (!result.ok) {
+      const fix = await chat(config, {
+        model: config.textModel,
+        ...THINKING_OFF,
+        response_format: schemaFormat(req.mode),
+        messages: [
+          { role: 'system', content: REPAIR_SYSTEM },
+          {
+            role: 'user',
+            content: repairUserText(first.text, result.problems),
+          },
+        ],
+      })
+      usages.push(fix.usage)
+      result = parseDescription(fix.text, req.mode)
     }
-    return c.json(result)
+
+    if (!result.ok)
+      return c.json(
+        { error: '模型返回的内容无法解析', raw: first.text.slice(0, 300) },
+        502,
+        usageHeader(usages),
+      )
+    return c.json(result.value, 200, usageHeader(usages))
   })
 
   // 根据最近的修改提出一版新的偏好说明。只处理文字，没有照片
@@ -165,8 +243,9 @@ export function createApp({ requireAccessToken }: AppOptions) {
       const parsed = suggestRequest.safeParse(await c.req.json())
       if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
       const config = dashscopeConfig(c.env)
-      const reply = await chat(config, {
-        model: config.vlModel,
+      const { text, usage } = await chat(config, {
+        model: config.textModel,
+        ...THINKING_OFF,
         messages: [
           { role: 'system', content: SUGGEST_SYSTEM },
           {
@@ -176,7 +255,11 @@ export function createApp({ requireAccessToken }: AppOptions) {
         ],
       })
       // 说明要放回提示词里，超长的部分截掉
-      return c.json({ text: reply.trim().slice(0, MAX_PREFERENCES_CHARS) })
+      return c.json(
+        { text: text.trim().slice(0, MAX_PREFERENCES_CHARS) },
+        200,
+        usageHeader([usage]),
+      )
     },
   )
 
@@ -185,14 +268,19 @@ export function createApp({ requireAccessToken }: AppOptions) {
     const parsed = summarizeRequest.safeParse(await c.req.json())
     if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
     const config = dashscopeConfig(c.env)
-    const reply = await chat(config, {
-      model: config.vlModel,
+    const { text, usage } = await chat(config, {
+      model: config.textModel,
+      ...THINKING_OFF,
       messages: [
         { role: 'system', content: summarySystem(parsed.data.preferences) },
         { role: 'user', content: summaryUserText(parsed.data) },
       ],
     })
-    return c.json({ text: reply.trim().slice(0, 600) })
+    return c.json(
+      { text: text.trim().slice(0, 600) },
+      200,
+      usageHeader([usage]),
+    )
   })
 
   // 地名接口不花百炼额度，但被滥用会让 Nominatim 封掉我们，所以同样要口令

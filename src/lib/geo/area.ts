@@ -11,9 +11,10 @@ export type Area = {
   county: number | null // 中国的区县在 public/geo/cn-counties.json 里的序号；国外为 null
 }
 
-// public/geo 下的边界文件重新生成（scripts/prepare_assets.mjs --force）后，
-// 序号可能变化，这里要加 1，旧记录会自动重算
-export const GEO_VERSION = 1
+// 边界数据的格式版本，和 scripts/prepare_assets.mjs 的 GEO_FORMAT 一致。
+// 文件重新生成后序号可能变化，两边一起加 1，旧记录会自动重算。
+// 2（决策 0016 第 5 条）：坐标改成整数差值编码
+export const GEO_VERSION = 2
 
 export const areaKey = (l: LatLng) => `${l.lat.toFixed(4)},${l.lng.toFixed(4)}`
 

@@ -13,6 +13,8 @@ import {
   type Preferences,
 } from '../lib/learning.ts'
 import { updatePreferences } from '../lib/preferences.ts'
+import { AvoidWordsCard } from './AvoidWordsCard.tsx'
+import { UsageCard } from './UsageCard.tsx'
 
 const percent = (n: number) => `${Math.round(n * 100)}%`
 const dayFmt = new Intl.DateTimeFormat('zh-CN', {
@@ -229,6 +231,9 @@ export function PreferencesPanel() {
           </>
         )}
       </div>
+
+      <AvoidWordsCard />
+      <UsageCard />
     </section>
   )
 }

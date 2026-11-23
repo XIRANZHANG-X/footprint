@@ -18,7 +18,7 @@ import {
   type AdminItem,
   type PrefixTable,
 } from './geo/cnTables.ts'
-import { locate, type Region } from './geo/pip.ts'
+import { decodeRegions, locate, type EncodedFile } from './geo/pip.ts'
 import { gridSlots, paginate } from './layout.ts'
 import { buildReview, onThisDay, shiftPeriod } from './review.ts'
 import { applyFilters, facets, NO_FILTERS, textHash } from './search.ts'
@@ -221,11 +221,19 @@ describe('China lookup tables (from geo-sleuth)', () => {
 })
 
 describe('area lookup (Natural Earth + geoBoundaries)', () => {
-  const admin1 = json<{
-    version: number
-    features: (Region & { cc: string })[]
-  }>('public/geo/admin1.json')
-  const counties = json<{ features: Region[] }>('public/geo/cn-counties.json')
+  // 文件里是整数差值编码（决策 0016 第 5 条），先解码
+  const admin1File = json<EncodedFile<{ n: string; cc: string }>>(
+    'public/geo/admin1.json',
+  )
+  const admin1 = {
+    version: admin1File.version,
+    features: decodeRegions(admin1File),
+  }
+  const counties = {
+    features: decodeRegions(
+      json<EncodedFile<{ n: string }>>('public/geo/cn-counties.json'),
+    ),
+  }
 
   it('uses the same data version as the app', () => {
     expect(admin1.version).toBe(GEO_VERSION)

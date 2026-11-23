@@ -7,6 +7,8 @@ export type Env = {
   DASHSCOPE_BASE_URL?: string
   ASR_MODEL?: string
   VL_MODEL?: string
+  // 纯文字任务用的模型（决策 0016 第 2 条），默认 qwen3.7-flash
+  TEXT_MODEL?: string
   // 访问口令（决策 0008）
   ACCESS_TOKEN?: string
 }

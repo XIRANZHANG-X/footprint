@@ -13,8 +13,7 @@ import {
 } from 'react-leaflet'
 import type { JournalRecord } from '../db.ts'
 import { cityOf } from '../lib/geo/area.ts'
-import type { Admin1Region } from '../lib/geo/regions.ts'
-import type { Region } from '../lib/geo/pip.ts'
+import type { Ring } from '../lib/geo/pip.ts'
 import { setRecordLocation } from '../lib/recordEdits.ts'
 import { shortPlace } from '../lib/review.ts'
 import { applyFilters, type Filters } from '../lib/search.ts'
@@ -45,9 +44,9 @@ const label = (r: JournalRecord) =>
 
 type Point = [number, number]
 
-const toLatLngs = (g: number[][][]) =>
+const toLatLngs = (g: ArrayLike<Ring>[]) =>
   g.map((poly) =>
-    poly.map((ring) => {
+    Array.from(poly, (ring) => {
       const out: Point[] = []
       for (let i = 0; i < ring.length; i += 2) out.push([ring[i + 1], ring[i]])
       return out
@@ -90,7 +89,8 @@ function OfflineBase({ show }: { show: boolean }) {
     const held: { layer: L.LayerGroup | null } = { layer: null }
     const run = { cancelled: false }
     void import('../lib/geo/regions.ts').then(async (m) => {
-      const regions = await m.loadAdmin1()
+      // 只要个轮廓，用精简过的那份（决策 0016 第 5 条）
+      const regions = await m.loadOutline()
       if (run.cancelled) return
       if (!map.getPane('offline')) {
         map.createPane('offline').style.zIndex = '150'
@@ -166,38 +166,42 @@ function litRegions(records: JournalRecord[]): Lit[] {
 
 function LitLayer({ lit, detail }: { lit: Lit[]; detail: boolean }) {
   const map = useMap()
-  const [shapes, setShapes] = useState<{
-    a1: Admin1Region[]
-    cn: Region[]
-  } | null>(null)
-  const needed = lit.length > 0
+  // 用到的形状，键是"a1:序号"或"cn:序号"
+  const [shapes, setShapes] = useState<Map<string, ArrayLike<Ring>[]> | null>(
+    null,
+  )
   useEffect(() => {
-    if (!needed) return
+    if (lit.length === 0) return
     const run = { cancelled: false }
+    // 边界数据在后台线程里，只把要点亮的那几个区域的形状要回来（决策 0016 第 5 条）
     void import('../lib/geo/regions.ts').then(async (m) => {
-      const [a1, cn] = await Promise.all([
-        m.loadAdmin1(),
-        lit.some((l) => l.kind === 'cn')
-          ? m.loadCounties()
-          : Promise.resolve([]),
-      ])
-      if (!run.cancelled) setShapes({ a1, cn })
+      const got = await m.regionShapes(
+        lit.filter((l) => l.kind === 'a1').map((l) => l.index),
+        lit.filter((l) => l.kind === 'cn').map((l) => l.index),
+      )
+      if (run.cancelled) return
+      setShapes(
+        new Map([
+          ...got.a1.map((s) => [`a1:${s.index}`, s.g] as const),
+          ...got.cn.map((s) => [`cn:${s.index}`, s.g] as const),
+        ]),
+      )
     })
     return () => {
       run.cancelled = true
     }
-  }, [needed, lit])
+  }, [lit])
 
   useEffect(() => {
     if (!shapes) return
     const max = Math.max(...lit.map((l) => l.days), 1)
     const group = L.layerGroup()
     for (const l of lit) {
-      const region = l.kind === 'cn' ? shapes.cn[l.index] : shapes.a1[l.index]
-      if (!region) continue
+      const g = shapes.get(`${l.kind}:${l.index}`)
+      if (!g) continue
       // 去过 1 天也要看得见；去得最多的最深
       const strength = 0.35 + 0.45 * (l.days / max)
-      L.polygon(toLatLngs(region.g), {
+      L.polygon(toLatLngs(g), {
         color: INK,
         weight: detail ? 1 : 2,
         opacity: detail ? 0.4 : 0.9,

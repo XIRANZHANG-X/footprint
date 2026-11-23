@@ -21,6 +21,9 @@ export type Preferences = {
   autoExamplesOn: boolean // auto 模式下当前带不带例子（记住它，才能做到"低于 10% 关、高于 20% 才再开"）
   proposal: string | null // 模型提出、还没被用户确认的新说明
   editsAtLastSummary: number // 上次提炼时一共有多少条修改记录
+  // "不要用的词"（决策 0016 第 4 条）：用户自己加的，和从学到的词里划掉的
+  extraWords: string[]
+  ignoredWords: string[]
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -29,6 +32,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autoExamplesOn: true,
   proposal: null,
   editsAtLastSummary: 0,
+  extraWords: [],
+  ignoredWords: [],
 }
 
 type EditLike = {
