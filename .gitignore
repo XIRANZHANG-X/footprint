@@ -29,3 +29,9 @@ dist-ssr
 
 # Wrangler 本地缓存
 .wrangler
+
+# 体积大的静态资源，由 scripts/prepare_assets.mjs 生成（决策 0014）
+.cache
+public/ort
+public/models
+public/geo

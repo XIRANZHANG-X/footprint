@@ -19,6 +19,19 @@ export function cacheKey(lat: number, lng: number) {
   return `${lat.toFixed(4)},${lng.toFixed(4)}`
 }
 
+// 所在城市（决策 0014 第 3C 条）。中国的 OSM 数据里地级市一般在 city，有时在 state_district；
+// 直辖市只有 state（"上海市"）。都没有时用 town / county，仍然没有就是 null
+function cityOf(a: Record<string, string>): string | null {
+  return (
+    a.city ??
+    a.state_district ??
+    (a.state?.endsWith('市') ? a.state : undefined) ??
+    a.town ??
+    a.county ??
+    null
+  )
+}
+
 type NominatimResult = {
   name?: string
   display_name?: string
@@ -37,6 +50,7 @@ export function formatNominatim(r: NominatimResult): Geocode {
   return {
     name: r.name?.trim() || null,
     address: address ?? r.display_name ?? null,
+    city: cityOf(a),
   }
 }
 
@@ -92,11 +106,11 @@ type NominatimSearchResult = NominatimResult & { lat?: string; lon?: string }
 export function formatCandidates(raw: unknown): PlaceCandidate[] {
   if (!Array.isArray(raw)) return []
   return (raw as NominatimSearchResult[])
-    .map((r) => ({
-      ...formatNominatim(r),
-      lat: Number(r.lat),
-      lng: Number(r.lon),
-    }))
+    .map((r) => {
+      // 候选里不带城市：PlaceCandidate 只有名称、地址和坐标
+      const { name, address } = formatNominatim(r)
+      return { name, address, lat: Number(r.lat), lng: Number(r.lon) }
+    })
     .filter(
       (c) =>
         inRange(c.lat, 90) &&

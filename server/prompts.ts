@@ -3,12 +3,14 @@ import {
   type DescribeMode,
   type DescribeRequest,
   type StyleExample,
+  type SummarizeRequest,
 } from '../shared/ai.ts'
 
 const COMMON_FIELDS = `- title：不超过 16 个字的标题，尽量用用户原话里的词，不要套话，不要感叹号
 - category：从 [${CATEGORIES.join('、')}] 里选一个
 - tags：2~5 个短标签
-- placeGuess：根据照片里的招牌、地标等能确认的地点名称；看不出来就填 null，不要猜`
+- placeGuess：根据照片里的招牌、地标等能确认的地点名称；看不出来就填 null，不要猜
+- clues：{"phones": [], "plates": []}。照片里能看清的电话号码和车牌号，原样抄下来；没有或看不清就是空数组，不要根据它们推断城市`
 
 // 完整整理：标题、类别、正文、标签。
 // 语气默认平实（决策 0012）：实测里模型爱补"热气腾腾""浓郁却不腻"这类用户没说过的形容
@@ -63,6 +65,34 @@ export const SUGGEST_SYSTEM = `你在帮一位用户维护他的"写作偏好说
 - 每条一行，以"- "开头，最多 6 条，每条不超过 30 个字
 - 写具体的做法（例如"不写感叹句""标题不超过 8 个字"），不写空话（例如"写得更好"）
 - 只输出说明本身，不要解释，不要加标题`
+
+// 出行总结（决策 0014 第 3E 条）：只用文字，语气和记录正文一样平实
+export const SUMMARY_SYSTEM = `你在帮一位用户给他的一次出行写总结，放在他私人足迹手账里这次出行的开头。
+我会按时间顺序给你这次出行的每条记录（日期、标题、地点、正文）。要求：
+- 用第一人称"我"，60~150 字，一段话
+- 语气平实，像自己随手记下的，不要写成游记或文案，不要感叹号
+- 只写记录里出现过的地方和事，按时间顺序串起来；不要添加记录里没有的感受、评价和事实
+- 只输出总结本身，不要标题，不要解释`
+
+export function summaryUserText(req: SummarizeRequest): string {
+  return req.items
+    .map((it, i) =>
+      [
+        `${i + 1}. ${it.date} ${it.title}`,
+        it.place ? `地点：${it.place}` : '',
+        it.body ? `正文：${it.body}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    )
+    .join('\n\n')
+}
+
+export function summarySystem(preferences?: string) {
+  return preferences?.trim()
+    ? `${SUMMARY_SYSTEM}\n\n这位用户对写法有自己的要求，和上面的要求冲突时以这里为准：\n${preferences.trim()}`
+    : SUMMARY_SYSTEM
+}
 
 export function suggestUserText(
   current: string,

@@ -1,5 +1,6 @@
 import { Dexie, type EntityTable } from 'dexie'
 import type { DescribeMode, Description } from '../shared/ai.ts'
+import type { Area } from './lib/geo/area.ts'
 import type { LatLng, TimeSource } from './lib/photoMeta.ts'
 import type { LocationStatus } from './lib/record.ts'
 import type { TripBreak } from './lib/trips.ts'
@@ -48,6 +49,10 @@ export type JournalRecord = {
   choosing?: boolean
   // 上次整理之后加过或删过照片：卡片上提示"要重新整理吗"，用户点了才整理（决策 0013 第 1 条）
   photosChanged?: boolean
+  // 所在行政区，由坐标在本地边界数据里算出（决策 0014 第 3C 条）。undefined = 还没算；null = 不在任何区域里
+  area?: Area | null
+  // 所在城市（中国是地级市）：来自地名查询，旧记录从地名文字里拆。undefined = 还没确定
+  geoCity?: string | null
 }
 
 // 修改记录（决策 0012 第 1 条）："AI 原稿 → 用户改后的版本"，学习用户写作习惯的原料。
@@ -73,7 +78,11 @@ export type Draft = {
   savedAt: number
 }
 
-// 零散的设置（偏好说明等），一个键一行
+// 本地语义搜索用的向量（决策 0014 第 3A 条）。可以随时重算，所以不进备份。
+// hash 是算向量时那段文字的指纹，记录改了文字就对不上，要重算
+export type Embedding = { recordId: string; hash: string; vector: Float32Array }
+
+// 零散的设置（偏好说明、出行总结等），一个键一行
 export type Setting = { key: string; value: unknown }
 
 export type StoredPhoto = {
@@ -96,6 +105,7 @@ export const db = new Dexie('footprint-journal') as Dexie & {
   edits: EntityTable<EditEntry, 'id'>
   settings: EntityTable<Setting, 'key'>
   drafts: EntityTable<Draft, 'id'>
+  embeddings: EntityTable<Embedding, 'recordId'>
 }
 
 db.version(1).stores({
@@ -160,4 +170,14 @@ db.version(5).stores({
   edits: 'id, recordId, at',
   settings: 'key',
   drafts: 'id',
+})
+
+// v6（第三档 3A）：语义搜索的向量表。只加表；记录上新增的 area、geoCity 是可选字段，旧记录在后台补
+db.version(6).stores({
+  records: 'id, takenAt',
+  photos: 'id, recordId',
+  edits: 'id, recordId, at',
+  settings: 'key',
+  drafts: 'id',
+  embeddings: 'recordId',
 })

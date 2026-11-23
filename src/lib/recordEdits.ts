@@ -10,11 +10,16 @@ export async function setRecordLocation(recordId: string, location: LatLng) {
     location,
     locationStatus: 'manual',
     placeName: null,
+    // 换了地方，城市要重新定（undefined 在 Dexie 里等于删掉这个字段）
+    geoCity: undefined,
   })
   try {
     const g = await geocode(location.lat, location.lng)
     const placeName = placeLabel(g)
-    await db.records.update(recordId, { placeName })
+    await db.records.update(recordId, {
+      placeName,
+      ...(g.city !== undefined ? { geoCity: g.city } : {}),
+    })
   } catch {
     // 留着坐标，界面上显示经纬度
   }
@@ -32,6 +37,8 @@ export function applyPlace(
     location: place.location,
     locationStatus: 'manual',
     placeName: place.placeName,
+    // 城市由后台从地名里拆（决策 0014 第 3C 条）
+    geoCity: undefined,
   })
 }
 

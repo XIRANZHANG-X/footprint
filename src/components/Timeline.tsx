@@ -1,27 +1,26 @@
+import { lazy, Suspense, useMemo, useState } from 'react'
 import type { JournalRecord } from '../db.ts'
+import { cityOf } from '../lib/geo/area.ts'
 import { isStarCenter, STAR } from '../lib/pixelStar.ts'
 import { setTripBreak } from '../lib/recordEdits.ts'
-import { groupTrips, type Trip } from '../lib/trips.ts'
+import {
+  applyFilters,
+  isFiltering,
+  matchesFacets,
+  type Filters,
+} from '../lib/search.ts'
+import { tripHeading } from '../lib/tripLabel.ts'
+import { groupTrips } from '../lib/trips.ts'
+import { computeVisits } from '../lib/visits.ts'
 import { RecordCard } from './RecordCard.tsx'
 
-const dayFmt = new Intl.DateTimeFormat('zh-CN', {
-  month: 'long',
-  day: 'numeric',
-})
-const DAY = 86_400_000
-
-function tripHeading(trip: Trip<JournalRecord>) {
-  const start = dayFmt.format(trip.start)
-  const end = dayFmt.format(trip.end)
-  const days =
-    Math.round(
-      (new Date(trip.end).setHours(0, 0, 0, 0) -
-        new Date(trip.start).setHours(0, 0, 0, 0)) /
-        DAY,
-    ) + 1
-  const range = start === end ? start : `${start} – ${end}`
-  return `${range} · ${days > 1 ? `${days} 天 · ` : ''}${trip.records.length} 条`
-}
+// 语义搜索要加载模型，出行总结要调 AI，都只在用到时加载
+const SemanticResults = lazy(() =>
+  import('./SemanticResults.tsx').then((m) => ({ default: m.SemanticResults })),
+)
+const TripSummary = lazy(() =>
+  import('./TripSummary.tsx').then((m) => ({ default: m.TripSummary })),
+)
 
 function PixelStar({ className }: { className?: string }) {
   return (
@@ -62,41 +61,149 @@ function EmptyState() {
   )
 }
 
-// 时间线按"一次出行"分组，最新的在上面。分组规则见 lib/trips.ts，
-// 用户可以手动拆分或合并，修正记在被拆/被合并的那条记录的 tripBreak 上。
-export function Timeline({
+// 首页的一行统计（决策 0014 第 3C 条）：记录数、城市数、出行次数、"第一次"的次数（去过的不同地方）
+function Stats({
   records,
-  onDelete,
+  trips,
+  places,
+  onCities,
 }: {
   records: JournalRecord[]
-  onDelete: (recordId: string) => void
+  trips: number
+  places: number
+  onCities: () => void
 }) {
-  const trips = groupTrips(records)
+  const cities = new Set(records.flatMap((r) => cityOf(r) ?? [])).size
+  return (
+    <p className="font-pixel text-[12px] text-ink-soft">
+      {records.length} 条记录 ·{' '}
+      <button
+        type="button"
+        className="underline decoration-dashed underline-offset-4 hover:text-ink"
+        onClick={onCities}
+      >
+        {cities} 个城市
+      </button>{' '}
+      · {trips} 次出行 · {places} 个第一次
+    </p>
+  )
+}
+
+// 时间线按"一次出行"分组，最新的在上面。分组规则见 lib/trips.ts，
+// 用户可以手动拆分或合并，修正记在被拆/被合并的那条记录的 tripBreak 上。
+// 有搜索词或筛选条件时改成按时间平铺，每条标明属于哪次出行（决策 0014 第 3A 条）
+export function Timeline({
+  records,
+  filters,
+  onDelete,
+  onShowMap,
+}: {
+  records: JournalRecord[]
+  filters: Filters
+  onDelete: (recordId: string) => void
+  onShowMap: () => void
+}) {
+  const trips = useMemo(() => groupTrips(records), [records])
+  const { visits, places } = useMemo(
+    () => computeVisits(records, cityOf),
+    [records],
+  )
+  const [summarizing, setSummarizing] = useState<string | null>(null)
   const oldestTripId = trips[0]?.id
+
+  const card = (r: JournalRecord, tripLabel?: string) => (
+    <RecordCard
+      key={r.id}
+      record={r}
+      onDelete={onDelete}
+      visit={visits.get(r.id)}
+      tripLabel={tripLabel}
+    />
+  )
+
+  if (isFiltering(filters)) {
+    const tripOf = new Map<string, string>()
+    for (const t of trips)
+      for (const r of t.records) tripOf.set(r.id, tripHeading(t))
+    const found = applyFilters(records, filters, cityOf).sort(
+      (a, b) => b.takenAt - a.takenAt,
+    )
+    const pool = records.filter((r) => matchesFacets(r, filters, cityOf(r)))
+    return (
+      <section className="mt-6">
+        <p className="font-pixel text-[12px] text-ink-soft">
+          找到 {found.length} 条
+        </p>
+        <div className="mt-3 space-y-4">
+          {found.map((r) => card(r, tripOf.get(r.id)))}
+        </div>
+        {filters.q.trim() && (
+          <Suspense fallback={null}>
+            <SemanticResults
+              query={filters.q}
+              records={pool}
+              exclude={new Set(found.map((r) => r.id))}
+              render={(r) => card(r, tripOf.get(r.id))}
+            />
+          </Suspense>
+        )}
+      </section>
+    )
+  }
 
   return (
     <section className="mt-6 space-y-6">
-      {records.length === 0 && <EmptyState />}
+      {records.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <Stats
+          records={records}
+          trips={trips.length}
+          places={places.length}
+          onCities={onShowMap}
+        />
+      )}
       {[...trips].reverse().map((trip) => {
         const firstId = trip.records[0].id
         return (
           <div key={trip.id}>
-            <header className="mb-3 flex items-center justify-between gap-2">
+            <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="px-tag bg-taro px-2 py-1">{tripHeading(trip)}</h2>
-              {trip.id !== oldestTripId && (
+              <div className="flex gap-2">
                 <button
                   type="button"
-                  className="px-btn px-btn-sm"
-                  onClick={() => void setTripBreak(firstId, 'join')}
+                  className="px-btn px-btn-sm bg-taro"
+                  aria-expanded={summarizing === trip.id}
+                  onClick={() =>
+                    setSummarizing(summarizing === trip.id ? null : trip.id)
+                  }
                 >
-                  并入上一次出行
+                  总结
                 </button>
-              )}
+                {trip.id !== oldestTripId && (
+                  <button
+                    type="button"
+                    className="px-btn px-btn-sm"
+                    onClick={() => void setTripBreak(firstId, 'join')}
+                  >
+                    并入上一次出行
+                  </button>
+                )}
+              </div>
             </header>
+            {summarizing === trip.id && (
+              <Suspense fallback={null}>
+                <TripSummary
+                  trip={trip}
+                  visits={visits}
+                  onClose={() => setSummarizing(null)}
+                />
+              </Suspense>
+            )}
             <div className="space-y-4 border-l-4 border-taro pl-3">
               {[...trip.records].reverse().map((r) => (
                 <div key={r.id}>
-                  <RecordCard record={r} onDelete={onDelete} />
+                  {card(r)}
                   {r.id !== firstId && (
                     <button
                       type="button"

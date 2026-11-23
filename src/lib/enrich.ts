@@ -30,14 +30,14 @@ export async function enrichRecord(
     // 查地名和缩小照片互不依赖，同时进行（决策 0013 第 5 条），并分别计时
     const lookupPlace = async () => {
       if (!record.location || record.placeName)
-        return { placeName: record.placeName, ms: null }
+        return { placeName: record.placeName, city: undefined, ms: null }
       const t = performance.now()
       try {
         const g = await geocode(record.location.lat, record.location.lng)
-        return { placeName: placeLabel(g), ms: elapsed(t) }
+        return { placeName: placeLabel(g), city: g.city, ms: elapsed(t) }
       } catch {
         // 地名查不到不影响生成正文
-        return { placeName: null, ms: elapsed(t) }
+        return { placeName: null, city: undefined, ms: elapsed(t) }
       }
     }
     const shrinkPhotos = async () => {
@@ -81,6 +81,8 @@ export async function enrichRecord(
       ...(place.ms !== null && place.placeName
         ? { placeName: place.placeName }
         : {}),
+      // 地名查询顺带给出的城市（决策 0014 第 3C 条）；旧版服务端没有这个字段时不写，由后台从地名里拆
+      ...(place.city !== undefined ? { geoCity: place.city } : {}),
       placeGuess: draft.placeGuess,
       aiStatus: 'done',
       photosChanged: false,

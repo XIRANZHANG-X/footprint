@@ -3,10 +3,12 @@ import {
   geocodeResponse,
   placeSearchResponse,
   suggestResponse,
+  summarizeResponse,
   transcribeResponse,
   type DescribeRequest,
   type Geocode,
   type StyleExample,
+  type SummarizeRequest,
 } from '../../shared/ai.ts'
 import type { z } from 'zod'
 import { getAccessToken, setAccessToken } from './storage.ts'
@@ -79,6 +81,11 @@ export async function suggestPreferences(
       postJson({ current, edits }),
     )
   ).text
+}
+
+// 一次出行的总结（决策 0014 第 3E 条），只发文字
+export async function summarize(req: SummarizeRequest) {
+  return (await call('/summarize', summarizeResponse, postJson(req))).text
 }
 
 export function geocode(lat: number, lng: number) {

@@ -18,6 +18,7 @@ import {
 } from '../lib/record.ts'
 import { setRecordDetails } from '../lib/recordEdits.ts'
 import { saveErrorMessage } from '../lib/storage.ts'
+import { visitLabel, type VisitInfo } from '../lib/visits.ts'
 import { PlacePicker } from './PlacePicker.tsx'
 import { useObjectUrl } from './useObjectUrl.ts'
 
@@ -325,9 +326,15 @@ function Chooser({ record }: { record: JournalRecord }) {
 export function RecordCard({
   record,
   onDelete,
+  visit,
+  tripLabel,
 }: {
   record: JournalRecord
   onDelete: (recordId: string) => void
+  // 第几次来这个地方、是不是第一次来这个城市（决策 0014 第 3C 条）
+  visit?: VisitInfo
+  // 搜索结果平铺显示时，标明这条属于哪次出行（决策 0014 第 3A 条）
+  tripLabel?: string
 }) {
   const photos = useLiveQuery(
     () => db.photos.where('recordId').equals(record.id).sortBy('order'),
@@ -362,6 +369,9 @@ export function RecordCard({
             {dateFmt.format(record.takenAt)}
             {record.photoCount > 0 && ` · ${record.photoCount} 张`}
           </p>
+          {tripLabel && (
+            <p className="mt-0.5 text-xs text-ink-soft">出行：{tripLabel}</p>
+          )}
           {content?.title && !editing && (
             <h3 className="px-title mt-1 text-[20px]">{content.title}</h3>
           )}
@@ -386,6 +396,14 @@ export function RecordCard({
               <span className="px-tag bg-lemon">待定位</span>
             )}
             {content && <span className="px-tag">{content.category}</span>}
+            {visit && (
+              <span className="px-tag bg-berry">{visitLabel(visit)}</span>
+            )}
+            {visit?.firstInCity && (
+              <span className="px-tag bg-taro">
+                第一次来{visit.firstInCity}
+              </span>
+            )}
           </p>
           {!record.location && !editing && !placing && (
             <button

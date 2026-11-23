@@ -1,2 +1,5 @@
 # 由 Capacitor 生成的安卓工程，用 Android Studio 的格式，不归 Prettier 管
 android
+
+# 借来的数据文件保持原样（决策 0014 补充）
+public/data

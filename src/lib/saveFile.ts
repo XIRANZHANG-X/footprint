@@ -47,6 +47,50 @@ export async function shareImageNative(
   return result
 }
 
+// 一次分享几张图（长图分页、朋友圈多图，决策 0014 第 3B 条）：逐张存进相册，再一起交给分享面板
+export async function shareImagesNative(
+  files: File[],
+): Promise<
+  { savedToGallery: true } | { savedToGallery: false; reason: string }
+> {
+  const datas = await Promise.all(files.map(toBase64))
+  let result: Awaited<ReturnType<typeof shareImagesNative>> = {
+    savedToGallery: true,
+  }
+  for (const [i, data] of datas.entries()) {
+    try {
+      await GallerySaver.saveImage({ data, name: files[i].name })
+    } catch (e) {
+      result = {
+        savedToGallery: false,
+        reason: e instanceof Error ? e.message : String(e),
+      }
+      break
+    }
+  }
+  const [{ Filesystem, Directory }, { Share }] = await Promise.all([
+    import('@capacitor/filesystem'),
+    import('@capacitor/share'),
+  ])
+  const uris: string[] = []
+  for (const [i, data] of datas.entries())
+    uris.push(
+      (
+        await Filesystem.writeFile({
+          path: files[i].name,
+          data,
+          directory: Directory.Cache,
+        })
+      ).uri,
+    )
+  try {
+    await Share.share({ files: uris })
+  } catch (e) {
+    if (!/cancel/i.test(e instanceof Error ? e.message : String(e))) throw e
+  }
+  return result
+}
+
 async function shareNative(data: string, name: string) {
   const [{ Filesystem, Directory }, { Share }] = await Promise.all([
     import('@capacitor/filesystem'),

@@ -1,8 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MAX_PLACE_QUERY_CHARS, type PlaceCandidate } from '../../shared/ai.ts'
 import { db, type JournalRecord } from '../db.ts'
 import { placeLabel, searchPlaces } from '../lib/ai.ts'
+import type { ClueCity } from '../lib/geo/cnTables.ts'
 import { sameDayPlaces } from '../lib/places.ts'
 import { applyPlace, setPlaceNameOnly } from '../lib/recordEdits.ts'
 
@@ -36,6 +37,31 @@ export function PlacePicker({
     candidates: PlaceCandidate[]
   }>()
   const [message, setMessage] = useState<string>()
+  const input = useRef<HTMLInputElement>(null)
+
+  // 照片里读到的电话、车牌指向的城市（决策 0014 补充，借自 geo-sleuth）。查表数据只在这里用到时加载
+  const [clues, setClues] = useState<ClueCity[]>([])
+  useEffect(() => {
+    let cancelled = false
+    void import('../lib/geo/regions.ts')
+      .then((m) => m.clueCities(record))
+      .then((c) => !cancelled && setClues(c))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [record])
+
+  // 点了城市：把城市名放到输入框最前面，已经有地名就直接查，没有就等用户输入店名
+  const pickCity = (city: string) => {
+    const rest = query.replace(city, '').trim()
+    const q = `${city} ${rest || (record.placeGuess ?? '')}`.trim()
+    if (q !== city) void search(q)
+    else {
+      setQuery(`${city} `)
+      input.current?.focus()
+    }
+  }
 
   const search = async (name: string) => {
     const q = name.trim()
@@ -107,6 +133,28 @@ export function PlacePicker({
         </div>
       )}
 
+      {clues.length > 0 && (
+        <div>
+          <p className="font-pixel text-[12px] text-ink-soft">
+            照片里读到的电话、车牌指向这些城市，点一下在这个城市里查
+          </p>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {clues.map((c) => (
+              <button
+                key={c.city}
+                type="button"
+                className={`${chip} bg-taro`}
+                disabled={searching}
+                onClick={() => pickCity(c.city)}
+              >
+                {c.city}
+                <span className="opacity-60">（{c.via}）</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -122,6 +170,7 @@ export function PlacePicker({
         <div className="mt-1 flex gap-2">
           <input
             id={`place-${record.id}`}
+            ref={input}
             className="px-input min-w-0 flex-1"
             value={query}
             maxLength={MAX_PLACE_QUERY_CHARS}

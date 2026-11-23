@@ -55,18 +55,29 @@ export const describeRequest = z
   .refine((r) => r.images.length > 0 || r.note.trim() !== '')
 export type DescribeRequest = z.input<typeof describeRequest>
 
+// 照片里读到的电话号码和车牌（决策 0014 补充，借自 geo-sleuth）：模型只抄字，城市由前端查表得出
+export const photoClues = z.object({
+  phones: z.array(z.string().max(30)).max(5).catch([]),
+  plates: z.array(z.string().max(12)).max(5).catch([]),
+})
+export type PhotoClues = z.infer<typeof photoClues>
+
 export const description = z.object({
   title: z.string().min(1).max(40),
   category: z.enum(CATEGORIES).catch('其他'),
   intro: z.string().max(300),
   tags: z.array(z.string().max(12)).max(5).catch([]),
   placeGuess: z.string().max(60).nullable().catch(null),
+  // 后来加的字段：旧记录的 aiDraft 里没有它
+  clues: photoClues.optional().catch(undefined),
 })
 export type Description = z.infer<typeof description>
 
 export const geocodeResponse = z.object({
   name: z.string().nullable(),
   address: z.string().nullable(),
+  // 所在城市（中国是地级市），给"第几次来"和统计用（决策 0014 第 3C 条）。旧版服务端没有这个字段
+  city: z.string().nullable().optional(),
 })
 export type Geocode = z.infer<typeof geocodeResponse>
 
@@ -90,3 +101,18 @@ export const suggestRequest = z.object({
   edits: z.array(styleExample).min(1).max(10),
 })
 export const suggestResponse = z.object({ text: z.string() })
+
+// 一次出行的总结（决策 0014 第 3E 条）：只发这次出行每条记录的日期、标题、地名、正文，不发照片
+export const MAX_SUMMARY_ITEMS = 60
+export const summaryItem = z.object({
+  date: z.string().max(20),
+  title: z.string().max(40),
+  place: z.string().max(80).default(''),
+  body: z.string().max(400).default(''),
+})
+export const summarizeRequest = z.object({
+  items: z.array(summaryItem).min(1).max(MAX_SUMMARY_ITEMS),
+  preferences: z.string().max(MAX_PREFERENCES_CHARS).optional(),
+})
+export type SummarizeRequest = z.input<typeof summarizeRequest>
+export const summarizeResponse = z.object({ text: z.string() })

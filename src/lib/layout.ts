@@ -78,3 +78,36 @@ export function coverCrop(
   const h = dstH / scale
   return { x: (srcW - w) / 2, y: (srcH - h) / 2, w, h }
 }
+
+// 九宫格（决策 0014 第 3B 条）：最多 9 张，正方形格子，行数按张数来
+export function gridSlots(count: number, size: number, gap: number): Rect[] {
+  const n = Math.min(count, 9)
+  // 2、4 张用两列；3 张排成一行三张，不留空格子；5 张以上三列
+  const cols = n <= 1 ? 1 : n === 2 || n === 4 ? 2 : 3
+  const cell = (size - gap * (cols - 1)) / cols
+  return Array.from({ length: n }, (_, i) => ({
+    x: (i % cols) * (cell + gap),
+    y: Math.floor(i / cols) * (cell + gap),
+    w: cell,
+    h: cell,
+  }))
+}
+
+// 长图分页（决策 0014 第 3B 条第 5 点）：内容由一块块高度已知的小块组成（一行字、一张照片……），
+// 按顺序装进页里，每页不超过 maxHeight；一块不会被切成两半。返回每页包含的块的序号
+export function paginate(heights: number[], maxHeight: number): number[][] {
+  const pages: number[][] = []
+  let page: number[] = []
+  let used = 0
+  for (const [i, h] of heights.entries()) {
+    if (page.length > 0 && used + h > maxHeight) {
+      pages.push(page)
+      page = []
+      used = 0
+    }
+    page.push(i)
+    used += h
+  }
+  if (page.length > 0 || pages.length === 0) pages.push(page)
+  return pages
+}

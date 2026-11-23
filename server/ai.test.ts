@@ -226,6 +226,49 @@ describe('AI routes', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('summarize sends each record as text and returns the reply', async () => {
+    const fetchMock = mockChatReply('  先去了西湖，第二天吃了面。  ')
+    const res = await post('/summarize', {
+      items: [
+        { date: '11月3日', title: '西湖散步', place: '西湖', body: '走了一圈' },
+        { date: '11月4日', title: '排队的面', body: '好吃。' },
+      ],
+      preferences: '- 不写感叹句',
+    })
+    expect(await res.json()).toEqual({ text: '先去了西湖，第二天吃了面。' })
+    const body = sentBody(fetchMock)
+    expect(body.messages[0].content).toContain('- 不写感叹句')
+    expect(body.messages[1].content).toContain('1. 11月3日 西湖散步')
+    expect(body.messages[1].content).toContain('地点：西湖')
+    // 只发文字，不发照片
+    expect(typeof body.messages[1].content).toBe('string')
+  })
+
+  it('summarize needs at least one record', async () => {
+    const fetchMock = mockChatReply('x')
+    const res = await post('/summarize', { items: [] })
+    expect(res.status).toBe(400)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('describe keeps the phone numbers and plates the model read', async () => {
+    mockChatReply(
+      JSON.stringify({
+        title: '面馆',
+        category: '美食',
+        intro: '吃了面',
+        tags: [],
+        placeGuess: null,
+        clues: { phones: ['0571-88886666'], plates: ['浙A12345'] },
+      }),
+    )
+    const res = await post('/describe', { images: [IMG] })
+    expect((await json(res)).clues).toEqual({
+      phones: ['0571-88886666'],
+      plates: ['浙A12345'],
+    })
+  })
+
   it('describe returns 502 when the model reply is not valid JSON', async () => {
     mockChatReply('抱歉，我无法处理。')
     const res = await post('/describe', { images: [IMG] })
@@ -261,13 +304,18 @@ describe('geocode helpers', () => {
         name: '某某面馆',
         address: { city: '上海市', city_district: '黄浦区', road: '南京东路' },
       }),
-    ).toEqual({ name: '某某面馆', address: '上海市 · 黄浦区 · 南京东路' })
+    ).toEqual({
+      name: '某某面馆',
+      address: '上海市 · 黄浦区 · 南京东路',
+      city: '上海市',
+    })
   })
 
   it('falls back to display_name when no address parts are present', () => {
     expect(formatNominatim({ display_name: 'Somewhere' })).toEqual({
       name: null,
       address: 'Somewhere',
+      city: null,
     })
   })
 

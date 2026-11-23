@@ -5,7 +5,7 @@
 @import 'tailwindcss';
 
 /* 缝合像素字体（Fusion Pixel Font，OFL 协议，协议原文在同目录 OFL.txt）。
-   只用于标题、按钮、标签；先显示系统字体，加载完再换上 */
+   完整字体（决策 0014），只用于标题、按钮、标签；先显示系统字体，加载完再换上 */
 @font-face {
   font-family: 'Fusion Pixel';
   src: url('./assets/fonts/fusion-pixel-12px-zh_hans.woff2') format('woff2');
@@ -160,4 +160,25 @@
   .px-btn {
     transition: none;
   }
+}
+
+/* 地图上的地点标记和聚合圈（决策 0014 第 3D 条）：像素风方块，数字是去过几次 / 聚了几个地方 */
+/* 前面加 .leaflet-marker-icon：Leaflet 自己的样式表后加载，会把 display 改回 block */
+.leaflet-marker-icon.px-place,
+.leaflet-marker-icon.px-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-ink);
+  box-shadow: var(--shadow-px-sm);
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  color: var(--color-ink);
+}
+.leaflet-marker-icon.px-place {
+  background: var(--color-berry);
+}
+.leaflet-marker-icon.px-cluster {
+  background: var(--color-lemon);
+  border-radius: 50%;
 }

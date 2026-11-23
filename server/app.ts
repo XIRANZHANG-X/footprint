@@ -8,6 +8,7 @@ import {
   MAX_PLACE_QUERY_CHARS,
   MAX_PREFERENCES_CHARS,
   suggestRequest,
+  summarizeRequest,
   transcribeRequest,
 } from '../shared/ai.ts'
 import {
@@ -23,6 +24,8 @@ import {
   describeUserText,
   SUGGEST_SYSTEM,
   suggestUserText,
+  summarySystem,
+  summaryUserText,
 } from './prompts.ts'
 
 type AppEnv = { Bindings: Env }
@@ -176,6 +179,21 @@ export function createApp({ requireAccessToken }: AppOptions) {
       return c.json({ text: reply.trim().slice(0, MAX_PREFERENCES_CHARS) })
     },
   )
+
+  // 一次出行的总结（决策 0014 第 3E 条）。只处理文字，没有照片
+  app.post('/summarize', checkAccess, limit, requireKey, async (c) => {
+    const parsed = summarizeRequest.safeParse(await c.req.json())
+    if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
+    const config = dashscopeConfig(c.env)
+    const reply = await chat(config, {
+      model: config.vlModel,
+      messages: [
+        { role: 'system', content: summarySystem(parsed.data.preferences) },
+        { role: 'user', content: summaryUserText(parsed.data) },
+      ],
+    })
+    return c.json({ text: reply.trim().slice(0, 600) })
+  })
 
   // 地名接口不花百炼额度，但被滥用会让 Nominatim 封掉我们，所以同样要口令
   app.get('/geocode', checkAccess, async (c) => {

@@ -7,6 +7,7 @@ import {
   useState,
   type ChangeEvent,
 } from 'react'
+import { SearchBar } from './components/SearchBar.tsx'
 import { Timeline } from './components/Timeline.tsx'
 import { db, type Draft } from './db.ts'
 import { checkAi, type AiState } from './lib/ai.ts'
@@ -26,7 +27,10 @@ import {
 } from './lib/importPhotos.ts'
 import { proposePreferencesIfDue } from './lib/preferences.ts'
 import type { LatLng } from './lib/photoMeta.ts'
+import { needsGeo } from './lib/geo/area.ts'
 import { draftSummary } from './lib/record.ts'
+import { onThisDay } from './lib/review.ts'
+import { NO_FILTERS, type Filters } from './lib/search.ts'
 import { backupReminder } from './lib/reminder.ts'
 
 // 地图（Leaflet）体积较大，切到地图页签时再加载，记录页打开更快
@@ -51,6 +55,13 @@ const BackupPanel = lazy(() =>
 
 const UNDO_MS = 6000
 
+// 回顾页（决策 0014 第 3E 条）
+const ReviewPanel = lazy(() =>
+  import('./components/ReviewPanel.tsx').then((m) => ({
+    default: m.ReviewPanel,
+  })),
+)
+
 // 偏好页只在点开时才需要
 const PreferencesPanel = lazy(() =>
   import('./components/PreferencesPanel.tsx').then((m) => ({
@@ -60,9 +71,23 @@ const PreferencesPanel = lazy(() =>
 
 function App() {
   const records = useLiveQuery(() => db.records.toArray())
-  const [tab, setTab] = useState<'timeline' | 'map' | 'prefs' | 'backup'>(
-    'timeline',
-  )
+  const [tab, setTab] = useState<
+    'timeline' | 'map' | 'review' | 'prefs' | 'backup'
+  >('timeline')
+  // 搜索和筛选条件，时间线和地图共用（决策 0014 第 3A 条）
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+
+  // 有坐标的记录在后台补上所在区域和城市（决策 0014 第 3C 条）。
+  // 边界数据有十几 MB，只有确实有记录要补时才加载
+  useEffect(() => {
+    if (!records?.some(needsGeo)) return
+    const t = setTimeout(() => {
+      void import('./lib/geo/regions.ts')
+        .then((m) => m.backfillGeo())
+        .catch(() => {})
+    }, 300)
+    return () => clearTimeout(t)
+  }, [records])
   // 正在写的新记录：选好的照片（"只写几句"时为空数组）和开头的文字
   const [picked, setPicked] = useState<{ files: File[]; note: string } | null>(
     null,
@@ -122,6 +147,10 @@ function App() {
     getLastBackupAt(),
     now,
   )
+
+  // 一年前的今天（决策 0014 第 3E 条）：往年同月同日有记录才显示
+  const past = onThisDay(records ?? [], now)
+  const [pastHidden, setPastHidden] = useState(false)
 
   // 刚删掉的那条记录，留在内存里几秒钟供撤销（决策 0011）
   const [deleted, setDeleted] = useState<DeletedRecord | null>(null)
@@ -275,6 +304,29 @@ function App() {
         </button>
       )}
 
+      {past && !pastHidden && (
+        <div className="px-card mt-4 flex items-center justify-between gap-2 bg-taro px-3 py-2 text-sm">
+          <button
+            type="button"
+            className="min-w-0 flex-1 text-left"
+            onClick={() => {
+              setFilters({ ...NO_FILTERS, day: past.day })
+              setTab('timeline')
+            }}
+          >
+            {past.label} →
+          </button>
+          <button
+            type="button"
+            className="px-btn px-btn-sm shrink-0"
+            aria-label="今天不再显示"
+            onClick={() => setPastHidden(true)}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {remind && tab !== 'backup' && (
         <button
           type="button"
@@ -286,11 +338,12 @@ function App() {
         </button>
       )}
 
-      <nav className="mt-6 grid grid-cols-4 gap-2">
+      <nav className="mt-6 grid grid-cols-5 gap-1.5">
         {(
           [
             ['timeline', '时间线'],
             ['map', '地图'],
+            ['review', '回顾'],
             ['prefs', '偏好'],
             ['backup', '备份'],
           ] as const
@@ -300,7 +353,7 @@ function App() {
             type="button"
             onClick={() => setTab(key)}
             aria-pressed={tab === key}
-            className={`px-btn px-2 ${tab === key ? 'bg-ink text-paper' : ''}`}
+            className={`px-btn px-1 ${tab === key ? 'bg-ink text-paper' : ''}`}
           >
             {name}
           </button>
@@ -315,10 +368,23 @@ function App() {
             </p>
           }
         >
-          {tab === 'timeline' && (
-            <Timeline records={records} onDelete={(id) => void onDelete(id)} />
+          {(tab === 'timeline' || tab === 'map') && (
+            <SearchBar
+              records={records}
+              filters={filters}
+              onChange={setFilters}
+            />
           )}
-          {tab === 'map' && <MapView records={records} />}
+          {tab === 'timeline' && (
+            <Timeline
+              records={records}
+              filters={filters}
+              onDelete={(id) => void onDelete(id)}
+              onShowMap={() => setTab('map')}
+            />
+          )}
+          {tab === 'map' && <MapView records={records} filters={filters} />}
+          {tab === 'review' && <ReviewPanel records={records} now={now} />}
           {tab === 'prefs' && <PreferencesPanel />}
           {tab === 'backup' && <BackupPanel records={records} />}
         </Suspense>
