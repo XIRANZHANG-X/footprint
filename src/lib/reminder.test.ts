@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { backupReminder } from './reminder.ts'
+import { autoBackupDue, backupReminder, inNativeApp } from './reminder.ts'
 
 const DAY = 86_400_000
 const now = 100 * DAY
@@ -43,5 +43,22 @@ describe('backupReminder', () => {
       unbacked: 0,
       remind: false,
     })
+  })
+})
+
+describe('auto backup (Android app)', () => {
+  const DAY = 86_400_000
+  it('is due a week after the last backup, or when never backed up', () => {
+    expect(autoBackupDue(3, null, 10 * DAY)).toBe(true)
+    expect(autoBackupDue(3, 4 * DAY, 10 * DAY)).toBe(false)
+    expect(autoBackupDue(3, 3 * DAY, 10 * DAY)).toBe(true)
+  })
+
+  it('never runs with no records', () => {
+    expect(autoBackupDue(0, null, 10 * DAY)).toBe(false)
+  })
+
+  it('only counts as the native app when Capacitor says so', () => {
+    expect(inNativeApp()).toBe(false)
   })
 })

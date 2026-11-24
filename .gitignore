@@ -40,3 +40,11 @@ public/geo
 android/keystore.properties
 *.jks
 *.keystore
+
+# Playwright 界面测试的输出（决策 0019 第 6 条）
+test-results
+playwright-report
+blob-report
+
+# 提示词样例对比（决策 0019 第 8 条）：里面有自己的照片和原话
+evals

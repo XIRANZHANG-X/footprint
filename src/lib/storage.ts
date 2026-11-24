@@ -13,9 +13,10 @@ export function getLastBackupAt(): number | null {
   }
 }
 
-export function setLastBackupAt(t: number) {
+export function setLastBackupAt(t: number | null) {
   try {
-    localStorage.setItem(LAST_BACKUP_KEY, String(t))
+    if (t === null) localStorage.removeItem(LAST_BACKUP_KEY)
+    else localStorage.setItem(LAST_BACKUP_KEY, String(t))
   } catch {
     // 隐私模式等情况下写不进去，不影响备份本身
   }

@@ -4,9 +4,9 @@ import { setLastBackupAt } from './storage.ts'
 
 // 浏览器这一侧：IndexedDB ↔ 备份文件。格式本身见 backupFormat.ts。
 
-const bytes = async (b: Blob) => new Uint8Array(await b.arrayBuffer())
-
-export async function exportBackup(): Promise<{ blob: Blob; name: string }> {
+export async function exportBackup(
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ blob: Blob; name: string }> {
   const [records, photos, edits, settings, aiCalls] = await Promise.all([
     db.records.toArray(),
     db.photos.toArray(),
@@ -14,26 +14,20 @@ export async function exportBackup(): Promise<{ blob: Blob; name: string }> {
     db.settings.toArray(),
     db.aiCalls.toArray(),
   ])
-  const photoBytes = await Promise.all(
-    photos.map(async (p) => ({
-      ...p,
-      blob: await bytes(p.blob),
-      thumb: await bytes(p.thumb),
-    })),
-  )
+  // 从数据库读出来的照片是 Blob（指向浏览器存的文件），这里不读内容，打包时一张一张读
   const now = Date.now()
-  const zip = packBackup(records, photoBytes, now, {
-    edits,
-    settings,
-    aiCalls,
-  })
+  const blob = await packBackup(
+    records,
+    photos,
+    now,
+    { edits, settings, aiCalls },
+    onProgress,
+  )
   setLastBackupAt(now)
   const d = new Date(now)
   const pad = (n: number) => String(n).padStart(2, '0')
   return {
-    blob: new Blob([zip as Uint8Array<ArrayBuffer>], {
-      type: 'application/zip',
-    }),
+    blob,
     name: `足迹手账备份-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.zip`,
   }
 }
@@ -61,14 +55,9 @@ function withDefaults(r: JournalRecord): JournalRecord {
 
 // 合并导入：备份里的记录按 id 写入（同 id 以备份为准），本机已有的其他记录保留
 export async function importBackup(file: File) {
-  const data = unpackBackup(new Uint8Array(await file.arrayBuffer()))
-  const photos: StoredPhoto[] = data.photos.map((p) => ({
-    ...p,
-    blob: new Blob([p.blob as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' }),
-    thumb: new Blob([p.thumb as Uint8Array<ArrayBuffer>], {
-      type: 'image/jpeg',
-    }),
-  }))
+  // 照片是备份文件的切片，没有读进内存；写进数据库时浏览器再一张张复制
+  const data = await unpackBackup(file)
+  const photos: StoredPhoto[] = data.photos
   await db.transaction(
     'rw',
     [db.records, db.photos, db.edits, db.settings, db.aiCalls],

@@ -200,10 +200,19 @@ def main() -> None:
         canvas.paste(icon, ((w - icon.width) // 2, (h - icon.height) // 2))
         canvas.convert("RGB").save(f)
 
-    # 网页：矢量图标，另存一份 512 像素的 PNG 备用（以后做"添加到主屏幕"时用）
+    # 网页：矢量图标，加上"添加到主屏幕"用的 PNG（决策 0019 第 4 条）
     web = pad(art, 19)
     (REPO / "public" / "favicon.svg").write_text(svg(web, BACKGROUND), encoding="utf-8")
-    render(web, 27, BACKGROUND).resize((512, 512), Image.NEAREST).save(REPO / "public" / "icon-512.png")
+    for px in (192, 512):
+        render(web, 1, BACKGROUND).resize((px, px), Image.NEAREST).save(REPO / "public" / f"icon-{px}.png")
+    # 安卓的"可遮罩"图标会被裁成圆形等形状，中间 80% 才安全，所以图案留更多边：放在 27 格里
+    render(pad(art, 27), 1, BACKGROUND).resize((512, 512), Image.NEAREST).save(
+        REPO / "public" / "icon-maskable-512.png"
+    )
+    # iPhone 加到主屏幕用的图标，系统自己加圆角
+    render(pad(art, 21), 1, BACKGROUND).resize((180, 180), Image.NEAREST).save(
+        REPO / "public" / "apple-touch-icon.png"
+    )
     print("图标已生成", COLORS)
 
 

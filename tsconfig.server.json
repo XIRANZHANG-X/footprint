@@ -16,5 +16,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["server", "shared"]
+  "include": ["server", "shared", "scripts/eval_prompts.ts"]
 }

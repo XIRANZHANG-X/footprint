@@ -15,7 +15,7 @@ const GallerySaver = registerPlugin<{
 }>('GallerySaver')
 
 export async function saveFile(blob: Blob, name: string): Promise<void> {
-  if (isNativeApp()) return shareNative(await toBase64(blob), name)
+  if (isNativeApp()) return shareNative(await writeCacheFile(blob, name), name)
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -43,7 +43,7 @@ export async function shareImageNative(
       reason: e instanceof Error ? e.message : String(e),
     }
   }
-  await shareNative(data, name)
+  await shareNative(await writeCacheFile(blob, name), name)
   return result
 }
 
@@ -91,16 +91,31 @@ export async function shareImagesNative(
   return result
 }
 
-async function shareNative(data: string, name: string) {
-  const [{ Filesystem, Directory }, { Share }] = await Promise.all([
-    import('@capacitor/filesystem'),
-    import('@capacitor/share'),
-  ])
-  const { uri } = await Filesystem.writeFile({
+// 写进 App 的缓存目录，返回文件地址。分块写：备份可能几百 MB，
+// 一次只把 3 MB 转成 base64，不把整个文件变成一个大字符串（决策 0019 第 2 条）
+const WRITE_CHUNK = 3 * 1024 * 1024
+
+export async function writeCacheFile(
+  blob: Blob,
+  name: string,
+): Promise<string> {
+  const { Filesystem, Directory } = await import('@capacitor/filesystem')
+  const first = await Filesystem.writeFile({
     path: name,
-    data,
+    data: await toBase64(blob.slice(0, WRITE_CHUNK)),
     directory: Directory.Cache,
   })
+  for (let start = WRITE_CHUNK; start < blob.size; start += WRITE_CHUNK)
+    await Filesystem.appendFile({
+      path: name,
+      data: await toBase64(blob.slice(start, start + WRITE_CHUNK)),
+      directory: Directory.Cache,
+    })
+  return first.uri
+}
+
+async function shareNative(uri: string, name: string) {
+  const { Share } = await import('@capacitor/share')
   try {
     await Share.share({ title: name, files: [uri] })
   } catch (e) {

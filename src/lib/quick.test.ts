@@ -228,18 +228,18 @@ describe('usage and cost', () => {
 
 describe('backups carry the usage log', () => {
   const record = { id: 'r1', createdAt: 1, takenAt: 1 } as JournalRecord
-  it('round-trips aiCalls and accepts old backups without them', () => {
+  it('round-trips aiCalls and accepts old backups without them', async () => {
     const calls: AiCall[] = [
       { id: 'c1', at: 5, kind: 'describe', ok: true, ms: 900, usage: [] },
     ]
-    const zip = packBackup([record], [], 10, {
+    const zip = await packBackup([record], [], 10, {
       edits: [],
       settings: [],
       aiCalls: calls,
     })
-    expect(unpackBackup(zip).aiCalls).toEqual(calls)
-    const old = packBackup([record], [], 10)
-    expect(unpackBackup(old).aiCalls).toEqual([])
+    expect((await unpackBackup(zip)).aiCalls).toEqual(calls)
+    const old = await packBackup([record], [], 10)
+    expect((await unpackBackup(old)).aiCalls).toEqual([])
   })
 })
 

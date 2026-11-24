@@ -3,3 +3,4 @@ android
 
 # 借来的数据文件保持原样（决策 0014 补充）
 public/data
+package-lock.json

@@ -134,8 +134,14 @@ export function ShareSheet({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="分享图预览"
       className="fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-3 overflow-y-auto bg-ink/80 p-4"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose()
+      }}
     >
       <div
         onClick={(e) => e.stopPropagation()}

@@ -2,7 +2,7 @@
   "name": "footprint-journal",
   "private": true,
   "license": "MIT",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "assets": "node scripts/prepare_assets.mjs",
@@ -24,6 +24,9 @@
     "deploy": "npm run build && wrangler deploy",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "eval": "tsx scripts/eval_prompts.ts",
+    "check": "tsc -b && npm run lint && npm test && npm run format:check",
     "lint": "oxlint",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
@@ -49,6 +52,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/vite": "^4.3.4",
     "@types/leaflet": "^1.9.22",
     "@types/leaflet.markercluster": "^1.5.6",
@@ -60,10 +64,12 @@
     "concurrently": "^10.0.6",
     "oxlint": "^1.90.0",
     "prettier": "^3.9.10",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4.3.4",
     "tsx": "^4.23.15",
     "typescript": "~7.0.2",
     "vite": "^8.3.6",
+    "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.1.0",
     "wrangler": "^4.158.0"
   }

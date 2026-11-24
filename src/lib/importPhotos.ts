@@ -9,8 +9,16 @@ export type ImportResult = {
   failed: string[] // 处理失败的文件名（例如浏览器解不了的 HEIC）
 }
 
+// 处理到第几张（从 1 开始）、一共几张。一张一张处理：手机上同时解码几十张 4000 万像素的图会内存不够（决策 0019 第 3 条）
+export type PhotoProgress = (done: number, total: number) => void
+
 // 读元数据 + 压缩，得到可以直接入库的照片。firstOrder：第一张排在第几位
-async function preparePhotos(files: File[], recordId: string, firstOrder = 0) {
+async function preparePhotos(
+  files: File[],
+  recordId: string,
+  firstOrder = 0,
+  onProgress?: PhotoProgress,
+) {
   // 读照片信息的库（exifr）体积不小，只有导入照片时才用得上，到这里再加载，首屏更快
   const { readPhotoMeta } = await import('./exif.ts')
   const photos: StoredPhoto[] = []
@@ -31,6 +39,7 @@ async function preparePhotos(files: File[], recordId: string, firstOrder = 0) {
     } catch {
       failed.push(file.name)
     }
+    onProgress?.(photos.length + failed.length, files.length)
   }
   return { photos, failed }
 }
@@ -38,9 +47,10 @@ async function preparePhotos(files: File[], recordId: string, firstOrder = 0) {
 export async function importPhotos(
   files: File[],
   note = '',
+  onProgress?: PhotoProgress,
 ): Promise<ImportResult> {
   const recordId = crypto.randomUUID()
-  const { photos, failed } = await preparePhotos(files, recordId)
+  const { photos, failed } = await preparePhotos(files, recordId, 0, onProgress)
 
   if (photos.length === 0) return { recordId: null, imported: 0, failed }
 

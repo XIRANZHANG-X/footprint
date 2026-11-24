@@ -31,7 +31,13 @@ import { needsGeo } from './lib/geo/area.ts'
 import { draftSummary } from './lib/record.ts'
 import { onThisDay } from './lib/review.ts'
 import { NO_FILTERS, type Filters } from './lib/search.ts'
-import { backupReminder } from './lib/reminder.ts'
+import {
+  AUTO_BACKUP_DELAY_MS,
+  autoBackupDue,
+  autoBackupEnabled,
+  backupReminder,
+  inNativeApp,
+} from './lib/reminder.ts'
 
 // 地图（Leaflet）体积较大，切到地图页签时再加载，记录页打开更快
 const MapView = lazy(() =>
@@ -119,6 +125,8 @@ function App() {
     draftTimer.current = setTimeout(() => void saveDraft(files, note), 400)
   }
   const [busy, setBusy] = useState(false)
+  // 保存时处理到第几张照片（决策 0019 第 3 条：几十张大图在手机上要处理好一会儿）
+  const [saveProgress, setSaveProgress] = useState<string>()
   const [message, setMessage] = useState<string>()
   const [aiState, setAiState] = useState<AiState>('unavailable')
   const aiReady = aiState === 'ready'
@@ -147,6 +155,30 @@ function App() {
     getLastBackupAt(),
     now,
   )
+
+  // 安卓 App 里每周自动备份到"下载/足迹手账"（决策 0019 第 1 条）。打开后等几秒再做，
+  // 只在打开 App 时检查一次；成功了在页面上提一句，失败的原因到备份页看
+  const recordCount = records?.length
+  const autoBackupChecked = useRef(false)
+  useEffect(() => {
+    if (recordCount === undefined || autoBackupChecked.current) return
+    autoBackupChecked.current = true
+    if (
+      !inNativeApp() ||
+      !autoBackupEnabled() ||
+      !autoBackupDue(recordCount, getLastBackupAt(), Date.now())
+    )
+      return
+    const t = setTimeout(() => {
+      void import('./lib/autoBackup.ts')
+        .then((m) => m.runAutoBackup())
+        .then((s) => {
+          if (s.ok) setMessage('已自动备份到手机的"下载/足迹手账"文件夹。')
+        })
+        .catch(() => {})
+    }, AUTO_BACKUP_DELAY_MS)
+    return () => clearTimeout(t)
+  }, [recordCount])
 
   // 一年前的今天（决策 0014 第 3E 条）：往年同月同日有记录才显示
   const past = onThisDay(records ?? [], now)
@@ -194,7 +226,9 @@ function App() {
         recordId = await createTextRecord(note, location)
         setMessage('已保存')
       } else {
-        const r = await importPhotos(picked.files, note)
+        const r = await importPhotos(picked.files, note, (done, total) =>
+          setSaveProgress(total > 1 ? `${done}/${total}` : undefined),
+        )
         recordId = r.recordId
         const parts = [`已保存 ${r.imported} 张`]
         if (r.failed.length)
@@ -213,6 +247,7 @@ function App() {
       setMessage(saveErrorMessage(e))
     } finally {
       setBusy(false)
+      setSaveProgress(undefined)
     }
   }
 
@@ -222,8 +257,11 @@ function App() {
 
       {picked ? (
         busy ? (
-          <p className="mt-5 text-center font-pixel text-[12px] text-ink-soft">
-            保存中…
+          <p
+            role="status"
+            className="mt-5 text-center font-pixel text-[12px] text-ink-soft"
+          >
+            {saveProgress ? `正在处理照片 ${saveProgress}…` : '保存中…'}
           </p>
         ) : (
           <Suspense fallback={null}>
@@ -248,7 +286,7 @@ function App() {
                 type="file"
                 accept="image/*"
                 multiple
-                hidden
+                className="sr-only"
                 onChange={onPick}
               />
             </label>
@@ -286,7 +324,11 @@ function App() {
           )}
         </>
       )}
-      {message && <p className="mt-3 text-sm text-ink-soft">{message}</p>}
+      {message && (
+        <p role="status" className="mt-3 text-sm text-ink-soft">
+          {message}
+        </p>
+      )}
 
       {aiState === 'needsToken' && (
         <Suspense fallback={null}>

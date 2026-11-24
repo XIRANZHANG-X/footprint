@@ -48,7 +48,9 @@
     font-family: var(--font-sans);
     -webkit-tap-highlight-color: transparent;
   }
-  :focus-visible {
+  :focus-visible,
+  /* 选文件的按钮是 label 包着视觉上隐藏的 input（决策 0019 第 5 条）：input 拿到焦点时把框画在 label 上 */
+  label:has(> input.sr-only:focus-visible) {
     outline: 2px dashed var(--color-ink);
     outline-offset: 3px;
   }

@@ -1,18 +1,25 @@
-import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { z } from 'zod'
 import type { EditEntry, JournalRecord, Setting, StoredPhoto } from '../db.ts'
 import type { AiCall } from './usage.ts'
+import {
+  buildStoredZip,
+  readZipIndex,
+  zipEntryBlob,
+  ZipError,
+  type ZipEntry,
+} from './zipStore.ts'
 
 // 备份文件格式（zip）：
 //   manifest.json      记录和照片的元数据，以及修改记录和设置（偏好说明等）
 //   photos/<id>.jpg    存储版照片
 //   thumbs/<id>.jpg    缩略图
-// 这一层只处理字节，不碰 IndexedDB 和 Blob，方便在 Node 里测试往返。
+// 这一层只处理 Blob，不碰 IndexedDB，方便在 Node 里测试往返。
+// zip 只存不压，照片按位置切片读写，不会把整个备份读进内存（决策 0019 第 2 条，见 zipStore.ts）
 export const BACKUP_APP = 'footprint-journal'
 export const BACKUP_FORMAT = 1
 
 export type PhotoMeta = Omit<StoredPhoto, 'blob' | 'thumb'>
-export type PhotoBytes = PhotoMeta & { blob: Uint8Array; thumb: Uint8Array }
+export type PhotoBlobs = PhotoMeta & { blob: Blob; thumb: Blob }
 
 const latLng = z.object({ lat: z.number(), lng: z.number() }).nullable()
 
@@ -65,12 +72,13 @@ export type BackupExtras = {
 const photoPath = (id: string) => `photos/${id}.jpg`
 const thumbPath = (id: string) => `thumbs/${id}.jpg`
 
-export function packBackup(
+export async function packBackup(
   records: JournalRecord[],
-  photos: PhotoBytes[],
+  photos: PhotoBlobs[],
   exportedAt: number,
   extras: BackupExtras = { edits: [], settings: [] },
-): Uint8Array {
+  onProgress?: (done: number, total: number) => void,
+): Promise<Blob> {
   const manifest = {
     app: BACKUP_APP,
     format: BACKUP_FORMAT,
@@ -82,47 +90,63 @@ export function packBackup(
       return meta
     }),
   }
-  const files: Record<string, Uint8Array> = {
-    'manifest.json': strToU8(JSON.stringify(manifest)),
+  function* entries(): Generator<ZipEntry> {
+    yield {
+      name: 'manifest.json',
+      data: new Blob([JSON.stringify(manifest)], { type: 'application/json' }),
+    }
+    for (const p of photos) {
+      yield { name: photoPath(p.id), data: p.blob }
+      yield { name: thumbPath(p.id), data: p.thumb }
+    }
   }
-  for (const p of photos) {
-    files[photoPath(p.id)] = p.blob
-    files[thumbPath(p.id)] = p.thumb
-  }
-  // JPEG 本身已经压缩过，再压只会更慢，所以只打包不压缩
-  return zipSync(files, { level: 0 })
+  const total = 1 + photos.length * 2
+  return buildStoredZip(entries(), exportedAt, (done) =>
+    onProgress?.(done, total),
+  )
 }
 
 export class BackupError extends Error {}
 
-export function unpackBackup(bytes: Uint8Array): {
+export async function unpackBackup(file: Blob): Promise<{
   exportedAt: number
   records: JournalRecord[]
-  photos: PhotoBytes[]
+  photos: PhotoBlobs[]
   edits: EditEntry[]
   settings: Setting[]
   aiCalls: AiCall[]
-} {
-  let files: Record<string, Uint8Array>
+}> {
+  let index
   try {
-    files = unzipSync(bytes)
-  } catch {
-    throw new BackupError('不是有效的备份文件（无法解压）')
+    index = await readZipIndex(file)
+  } catch (e) {
+    throw new BackupError(
+      e instanceof ZipError
+        ? `不是有效的备份文件（${e.message}）`
+        : '不是有效的备份文件（无法解压）',
+    )
   }
-  const raw = files['manifest.json']
+  const entry = (name: string, type: string) => {
+    const e = index.get(name)
+    return e ? zipEntryBlob(file, e, type) : null
+  }
+  const raw = await entry('manifest.json', 'application/json')
   if (!raw) throw new BackupError('备份文件里缺少 manifest.json')
   let manifest
   try {
-    manifest = manifestSchema.parse(JSON.parse(strFromU8(raw)))
+    manifest = manifestSchema.parse(JSON.parse(await raw.text()))
   } catch {
     throw new BackupError('备份文件格式不对，或者来自不支持的版本')
   }
-  const photos = manifest.photos.map((p) => {
-    const blob = files[photoPath(p.id)]
-    const thumb = files[thumbPath(p.id)]
+  const photos: PhotoBlobs[] = []
+  for (const p of manifest.photos) {
+    const [blob, thumb] = await Promise.all([
+      entry(photoPath(p.id), 'image/jpeg'),
+      entry(thumbPath(p.id), 'image/jpeg'),
+    ])
     if (!blob || !thumb) throw new BackupError(`备份文件缺少照片 ${p.id}`)
-    return { ...p, blob, thumb }
-  })
+    photos.push({ ...p, blob, thumb })
+  }
   return {
     exportedAt: manifest.exportedAt,
     records: manifest.records as unknown as JournalRecord[],

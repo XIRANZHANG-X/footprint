@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // 自己写的插件要在 super.onCreate 之前注册
         registerPlugin(GallerySaverPlugin.class);
+        registerPlugin(BackupSaverPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
