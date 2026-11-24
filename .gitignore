@@ -35,3 +35,8 @@ dist-ssr
 public/ort
 public/models
 public/geo
+
+# 安卓正式签名（决策 0017）：密钥和口令都不进仓库
+android/keystore.properties
+*.jks
+*.keystore

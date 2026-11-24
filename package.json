@@ -1,7 +1,7 @@
 {
   "name": "footprint-journal",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "assets": "node scripts/prepare_assets.mjs",
@@ -17,6 +17,7 @@
     "build:app": "tsc -b && vite build --mode app",
     "app:sync": "npm run build:app && cap sync android",
     "app:open": "cap open android",
+    "app:release": "npm run app:sync && android\\gradlew.bat -p android assembleRelease",
     "preview": "vite preview",
     "worker:dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",

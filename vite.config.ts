@@ -2,6 +2,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
+import pkg from './package.json' with { type: 'json' }
 
 // onnxruntime 默认引用的 asyncify 版 wasm（26.9 MB）会被打进 dist/assets，
 // 超过 Cloudflare 单文件 25 MB 的上限。运行时我们把 wasm 路径指向 public/ort 里 14 MB 的普通版
@@ -32,6 +33,8 @@ export default defineConfig(({ mode }) => {
       dropUnusedOrtWasm(),
       ...(phone ? [basicSsl()] : []),
     ],
+    // 偏好页底部显示的版本号，和安卓安装包的版本号同出 package.json（决策 0017 第 2 条）
+    define: { __APP_VERSION__: JSON.stringify(pkg.version) },
     worker: { format: 'es', plugins: () => [dropUnusedOrtWasm()] },
     server: {
       host: phone ? true : undefined,

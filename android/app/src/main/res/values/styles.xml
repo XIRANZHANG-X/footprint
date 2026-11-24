@@ -18,5 +18,7 @@
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <!-- 安卓 12 起系统画启动画面：图标加这个底色（决策 0017 第 3 条） -->
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
     </style>
 </resources>

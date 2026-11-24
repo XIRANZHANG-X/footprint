@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { MAX_PREFERENCES_CHARS } from '../../shared/ai.ts'
+import { APP_VERSION } from '../appVersion.ts'
 import { db } from '../db.ts'
 import { changeRatio } from '../lib/editStats.ts'
 import {
@@ -234,6 +235,9 @@ export function PreferencesPanel() {
 
       <AvoidWordsCard />
       <UsageCard />
+      <p className="text-center text-xs text-ink-soft">
+        足迹手账 v{APP_VERSION}
+      </p>
     </section>
   )
 }
