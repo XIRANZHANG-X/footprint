@@ -23,6 +23,9 @@ import { StaySuggestions } from './StaySuggestions.tsx'
 const SemanticResults = lazy(() =>
   import('./SemanticResults.tsx').then((m) => ({ default: m.SemanticResults })),
 )
+const TripReview = lazy(() =>
+  import('./TripReview.tsx').then((m) => ({ default: m.TripReview })),
+)
 const TripSummary = lazy(() =>
   import('./TripSummary.tsx').then((m) => ({ default: m.TripSummary })),
 )
@@ -116,6 +119,9 @@ export function Timeline({
     [records],
   )
   const [summarizing, setSummarizing] = useState<string | null>(null)
+  // 回看（决策 0025）：路线回放、短视频、海报、PDF 手账
+  const [reviewing, setReviewing] = useState<string | null>(null)
+  const reviewTrip = trips.find((t) => t.id === reviewing)
   // 实现了哪个想去的地方（决策 0020 第 7 条）
   const wishes = useLiveQuery(() => db.wishes.toArray())
   // 轨迹（决策 0022）：出行标题的里程按轨迹算
@@ -206,6 +212,13 @@ export function Timeline({
                 >
                   总结
                 </button>
+                <button
+                  type="button"
+                  className="px-btn px-btn-sm"
+                  onClick={() => setReviewing(trip.id)}
+                >
+                  回看
+                </button>
                 {trip.id !== oldestTripId && (
                   <button
                     type="button"
@@ -245,6 +258,11 @@ export function Timeline({
           </div>
         )
       })}
+      {reviewTrip && (
+        <Suspense fallback={null}>
+          <TripReview trip={reviewTrip} onClose={() => setReviewing(null)} />
+        </Suspense>
+      )}
     </section>
   )
 }

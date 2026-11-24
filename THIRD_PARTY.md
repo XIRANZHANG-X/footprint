@@ -40,6 +40,10 @@
 - 地图瓦片：OpenStreetMap，© OpenStreetMap 贡献者，数据协议 ODbL。地图右下角有署名。
 - 地名查询：服务端转发到 OpenStreetMap 的 Nominatim。遵守它的使用政策：每秒最多 1 次，带可识别的 User-Agent，结果缓存。
 
+## 天气
+
+- 当时的天气（决策 0025）：[Open-Meteo](https://open-meteo.com/)，数据协议 CC BY 4.0，经过本项目的服务端转发。
+
 ## 主要代码依赖
 
 完整列表见 `package.json`，协议以各自包里的为准。打进网页的主要有：

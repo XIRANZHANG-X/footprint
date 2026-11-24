@@ -6,6 +6,7 @@ import {
   placeSearchResponse,
   boundaryResponse,
   planResponse,
+  weatherResponse,
   type PlanRequest,
   suggestResponse,
   summarizeResponse,
@@ -150,6 +151,14 @@ export async function searchPlaces(query: string) {
 // AI 帮我排行程（决策 0024 第 4 条），只发文字
 export function planTrip(req: PlanRequest) {
   return call('/plan', planResponse, postJson(req))
+}
+
+// 当时的天气（决策 0025）
+export function fetchWeather(lat: number, lng: number, t: number) {
+  return call(
+    `/weather?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}&t=${Math.round(t)}`,
+    weatherResponse,
+  )
 }
 
 // 行政区边界（决策 0020 第 6、7 条）：国内的市、区县用高德，国外用 OpenStreetMap，都经过服务端

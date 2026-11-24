@@ -244,3 +244,11 @@ export const planResponse = z.object({
     .max(MAX_PLAN_DAYS),
 })
 export type PlanResponse = z.infer<typeof planResponse>
+
+// ---------- 当时的天气（决策 0025） ----------
+// code 是 WMO 天气代码（0 晴、61 小雨……），App 里换成文字
+export const weatherResponse = z.object({
+  tempC: z.number().nullable(),
+  code: z.number().int().nullable(),
+})
+export type Weather = z.infer<typeof weatherResponse>

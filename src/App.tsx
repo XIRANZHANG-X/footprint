@@ -142,6 +142,17 @@ function App() {
     void checkAi().then(setAiState)
   }, [])
 
+  // 当时的天气（决策 0025）：能连服务端时，在后台给记录补上
+  useEffect(() => {
+    if (!aiReady || !records?.length) return
+    const t = setTimeout(() => {
+      void import('./lib/weather.ts')
+        .then((m) => m.backfillWeather())
+        .catch(() => {})
+    }, 2000)
+    return () => clearTimeout(t)
+  }, [aiReady, records])
+
   // 攒够一批修改后，让 AI 提出一版新的偏好说明，等用户到偏好页确认（决策 0012 第 6 条）。
   // 修改记录的条数变了就检查一次；失败不提示，下次再试
   const editCount = useLiveQuery(() => db.edits.count())

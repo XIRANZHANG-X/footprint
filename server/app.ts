@@ -30,6 +30,7 @@ import {
 } from './dashscope.ts'
 import type { Env } from './env.ts'
 import { findBoundary, findPlaces, placeName } from './places.ts'
+import { weatherAt } from './weather.ts'
 import {
   describeSystem,
   describeUserText,
@@ -372,6 +373,24 @@ export function createApp({ requireAccessToken }: AppOptions) {
     const id = boundaryRequest.safeParse(c.req.query('id') ?? '')
     if (!id.success) return c.json({ error: '边界编号不对' }, 400)
     return c.json(await findBoundary(c.env.AMAP_WEB_KEY, id.data))
+  })
+
+  // 当时的天气（决策 0025）：坐标和时间转发给 Open-Meteo，不存
+  app.get('/weather', lightRate, checkAccess, async (c) => {
+    const lat = Number(c.req.query('lat'))
+    const lng = Number(c.req.query('lng'))
+    const t = Number(c.req.query('t'))
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      Math.abs(lat) > 90 ||
+      Math.abs(lng) > 180 ||
+      !Number.isFinite(t) ||
+      t < Date.UTC(1940, 0, 1) ||
+      t > Date.now() + 3_600_000
+    )
+      return c.json({ error: '坐标或时间不对' }, 400)
+    return c.json(await weatherAt(lat, lng, t))
   })
 
   app.onError((err, c) => {

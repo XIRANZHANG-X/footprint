@@ -1,5 +1,10 @@
 import { Dexie, type EntityTable } from 'dexie'
-import type { DescribeMode, Description, PlaceKind } from '../shared/ai.ts'
+import type {
+  DescribeMode,
+  Description,
+  PlaceKind,
+  Weather,
+} from '../shared/ai.ts'
 import type { Area } from './lib/geo/area.ts'
 import type { AiCall } from './lib/usage.ts'
 import type { LatLng, TimeSource } from './lib/photoMeta.ts'
@@ -41,6 +46,8 @@ export type JournalRecord = {
   aiStatus: AiStatus
   aiError: string | null
   tripBreak: TripBreak // 用户对出行归组的手动修正（见 lib/trips.ts）
+  // 当时的天气（决策 0025）：undefined 还没查，null 查过但没有数据
+  weather?: Weather | null
   // 从上一条记录到这一条怎么去的，用户改过才有（决策 0022 第 7 条）；没有就按轨迹猜
   transport?: Transport | null
   // 正文用哪一版（决策 0012）：own = 用户自己写的（note），ai = AI 整理的（content.intro）。两版都留着，可以换

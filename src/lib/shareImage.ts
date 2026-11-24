@@ -318,6 +318,8 @@ export type DocBlock =
   | { kind: 'photo'; blob: Blob; width: number; height: number }
   | { kind: 'photoGrid'; blobs: Blob[] }
   | { kind: 'gap'; h: number }
+  // 路线示意图（决策 0025）：不用地图瓦片，只画线和按顺序编号的地方
+  | { kind: 'route'; sketch: RouteSketch; h?: number }
 
 type Piece = { h: number; draw: (ctx: Ctx, y: number) => Promise<void> | void }
 
@@ -402,27 +404,47 @@ function toPieces(ctx: Ctx, blocks: DocBlock[]): Piece[] {
       case 'gap':
         pieces.push({ h: b.h, draw: () => {} })
         break
+      case 'route': {
+        const h = b.h ?? 760
+        pieces.push({
+          h: h + SHADOW + 40,
+          draw: (c, y) => {
+            card(c, PAD, y, BOX_W, h, C.paper)
+            drawRouteSketch(c, b.sketch, {
+              x: PAD + BORDER,
+              y: y + BORDER,
+              w: BOX_W - BORDER * 2,
+              h: h - BORDER * 2,
+            })
+          },
+        })
+        break
+      }
     }
   }
   return pieces
 }
 
-// 把内容块排成一张或几张 1080 宽的长图。minHeight：内容太短时也至少这么高
+// 把内容块排成一张或几张 1080 宽的长图。minHeight：内容太短时也至少这么高。
+// pageHeight：每页固定这么高（导出 PDF 手账用，决策 0025）
 export async function renderDocument(
   blocks: DocBlock[],
-  { minHeight = 0 }: { minHeight?: number } = {},
+  {
+    minHeight = 0,
+    pageHeight,
+  }: { minHeight?: number; pageHeight?: number } = {},
 ): Promise<Blob[]> {
   await ensurePixelFont()
   const measure = newCanvas(1, 1).ctx
   const pieces = toPieces(measure, blocks)
   const pages = paginate(
     pieces.map((p) => p.h),
-    MAX_PAGE_H - PAD - FOOTER_H,
+    (pageHeight ?? MAX_PAGE_H) - PAD - FOOTER_H,
   )
   const out: Blob[] = []
   for (const [pi, idx] of pages.entries()) {
     const contentH = idx.reduce((s, i) => s + pieces[i].h, 0)
-    const h = Math.max(minHeight, PAD + contentH + FOOTER_H)
+    const h = pageHeight ?? Math.max(minHeight, PAD + contentH + FOOTER_H)
     const { canvas, ctx } = newCanvas(SHARE_W, h)
     paper(ctx, SHARE_W, h)
     let y = PAD
@@ -502,4 +524,130 @@ export async function renderShare(
     default:
       return [await renderFramed(record, photos, FRAMES[layout])]
   }
+}
+
+// ---------- 路线示意图（决策 0025） ----------
+// 回看的海报、PDF 手账、短视频都用。不用地图瓦片：瓦片有使用限制，画进图片还要处理跨域；
+// 手账里一条线加上按顺序编号的地方就够看出"去了哪、怎么走的"
+
+export type RouteSketch = {
+  paths: { points: { lat: number; lng: number }[]; long: boolean }[]
+  stops: { lat: number; lng: number; label: string }[]
+}
+
+type AnyCtx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D
+
+// progress：0–1，只画路线的前一部分（短视频里路线一点点画出来）
+export function drawRouteSketch(
+  ctx: AnyCtx,
+  sketch: RouteSketch,
+  box: Rect,
+  progress = 1,
+) {
+  const all = [...sketch.paths.flatMap((p) => p.points), ...sketch.stops]
+  if (all.length === 0) return
+  // 等距圆柱投影，经度按纬度缩一下，形状不至于太扁
+  const midLat =
+    (Math.min(...all.map((p) => p.lat)) + Math.max(...all.map((p) => p.lat))) /
+    2
+  const k = Math.cos((midLat * Math.PI) / 180)
+  const xs = all.map((p) => p.lng * k)
+  const ys = all.map((p) => p.lat)
+  const [minX, maxX, minY, maxY] = [
+    Math.min(...xs),
+    Math.max(...xs),
+    Math.min(...ys),
+    Math.max(...ys),
+  ]
+  const pad = 80
+  const scale = Math.min(
+    (box.w - pad * 2) / Math.max(maxX - minX, 1e-4),
+    (box.h - pad * 2) / Math.max(maxY - minY, 1e-4),
+  )
+  const ox = box.x + (box.w - (maxX - minX) * scale) / 2
+  const oy = box.y + (box.h - (maxY - minY) * scale) / 2
+  const at = (p: { lat: number; lng: number }) => ({
+    x: ox + (p.lng * k - minX) * scale,
+    y: oy + (maxY - p.lat) * scale,
+  })
+
+  // 线：按总长度算画到哪里
+  const segs = sketch.paths.map((path) => ({
+    long: path.long,
+    pts: path.points.map(at),
+  }))
+  const lens = segs.map((s) =>
+    s.pts
+      .slice(1)
+      .reduce(
+        (n, q, i) => n + Math.hypot(q.x - s.pts[i].x, q.y - s.pts[i].y),
+        0,
+      ),
+  )
+  let budget = lens.reduce((a, b) => a + b, 0) * progress
+  ctx.lineCap = 'butt'
+  ctx.lineJoin = 'miter'
+  for (const [si, s] of segs.entries()) {
+    if (budget <= 0) break
+    ctx.setLineDash(s.long ? [24, 18] : [])
+    ctx.strokeStyle = '#8c6cc8'
+    ctx.lineWidth = 10
+    ctx.beginPath()
+    ctx.moveTo(s.pts[0].x, s.pts[0].y)
+    for (let i = 1; i < s.pts.length; i++) {
+      const a = s.pts[i - 1]
+      const b = s.pts[i]
+      const d = Math.hypot(b.x - a.x, b.y - a.y)
+      if (d <= budget) {
+        ctx.lineTo(b.x, b.y)
+        budget -= d
+      } else {
+        const t = budget / d
+        ctx.lineTo(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+        budget = 0
+        break
+      }
+    }
+    ctx.stroke()
+    if (budget > 0 && si === segs.length - 1) budget = 0
+  }
+  ctx.setLineDash([])
+
+  // 地方：编号方块，画到哪里就出现到哪里
+  const shown = Math.ceil(sketch.stops.length * progress)
+  const labeled: { x: number; y: number }[] = []
+  ctx.textBaseline = 'middle'
+  for (const [i, stop] of sketch.stops.slice(0, Math.max(1, shown)).entries()) {
+    const q = at(stop)
+    const size = 52
+    ctx.fillStyle = C.ink
+    ctx.fillRect(q.x - size / 2 + 6, q.y - size / 2 + 6, size, size)
+    ctx.fillStyle = C.berry
+    ctx.fillRect(q.x - size / 2, q.y - size / 2, size, size)
+    ctx.strokeStyle = C.ink
+    ctx.lineWidth = 5
+    ctx.strokeRect(q.x - size / 2, q.y - size / 2, size, size)
+    ctx.fillStyle = C.ink
+    ctx.font = `32px ${PIXEL}`
+    const n = String(i + 1)
+    ctx.fillText(n, q.x - ctx.measureText(n).width / 2, q.y + 2)
+    // 离已经写了名字的地方太近（互相压住）就只画编号，不写名字
+    const crowded = labeled.some((l) => Math.hypot(l.x - q.x, l.y - q.y) < 90)
+    if (stop.label && !crowded) {
+      labeled.push(q)
+      ctx.font = `30px ${PIXEL}`
+      const w = ctx.measureText(stop.label).width
+      // 右边放得下就放右边，放不下放到方块左边，不压住方块
+      const right = q.x + size / 2 + 12
+      const lx =
+        right + w + 10 <= box.x + box.w
+          ? right
+          : Math.max(box.x + 10, q.x - size / 2 - 12 - w)
+      ctx.fillStyle = C.paper
+      ctx.fillRect(lx - 6, q.y - 22, w + 12, 44)
+      ctx.fillStyle = C.ink
+      ctx.fillText(stop.label, lx, q.y + 2)
+    }
+  }
+  ctx.textBaseline = 'alphabetic'
 }

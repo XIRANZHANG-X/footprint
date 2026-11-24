@@ -19,6 +19,7 @@ import {
 import { setRecordDetails } from '../lib/recordEdits.ts'
 import { saveErrorMessage } from '../lib/storage.ts'
 import { visitLabel, type VisitInfo } from '../lib/visits.ts'
+import { formatWeather } from '../lib/weather.ts'
 import { PlacePicker } from './PlacePicker.tsx'
 import { useObjectUrl } from './useObjectUrl.ts'
 
@@ -407,6 +408,11 @@ export function RecordCard({
             {visit?.firstInCity && (
               <span className="px-tag bg-taro">
                 第一次来{visit.firstInCity}
+              </span>
+            )}
+            {formatWeather(record.weather) && (
+              <span className="px-tag" title="当时的天气（来自 Open-Meteo）">
+                {formatWeather(record.weather)}
               </span>
             )}
             {record.locationStatus === 'track' && (
