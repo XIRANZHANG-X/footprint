@@ -13,7 +13,13 @@ import {
   useMapEvents,
 } from 'react-leaflet'
 import { inChinaRough } from '../../shared/gcj02.ts'
-import { db, type JournalRecord, type VisitedPlace, type Wish } from '../db.ts'
+import {
+  db,
+  type JournalRecord,
+  type Plan,
+  type VisitedPlace,
+  type Wish,
+} from '../db.ts'
 import { geocode } from '../lib/ai.ts'
 import { cityOf } from '../lib/geo/area.ts'
 import {
@@ -32,6 +38,7 @@ import { groupTrips } from '../lib/trips.ts'
 import { computeVisits, localDay, type PlaceGroup } from '../lib/visits.ts'
 import { wishState } from '../lib/wishes.ts'
 import { FootprintCard } from './FootprintCard.tsx'
+import { PlanPanel } from './PlanPanel.tsx'
 import { TrackerCard } from './TrackerCard.tsx'
 import { VisitedPicker } from './VisitedPicker.tsx'
 import { addWish } from '../lib/addWish.ts'
@@ -452,6 +459,47 @@ function RouteLayer({
   )
 }
 
+// 计划里的地方（决策 0024）：还没结束的计划，按天、按顺序连起来，天空蓝的虚线和"第几天"的小方块
+const SKY_DEEP = '#4f8fd6'
+function PlanLayer({ plans }: { plans: Plan[] }) {
+  const map = useMap()
+  useEffect(() => {
+    const group = L.layerGroup()
+    for (const plan of plans) {
+      const stops = [...plan.stops]
+        .filter((s) => s.lat !== null && s.lng !== null)
+        .sort((a, b) => a.day - b.day)
+      const pts = stops.map((s): Point => [s.lat!, s.lng!])
+      if (pts.length > 1)
+        L.polyline(pts, {
+          color: SKY_DEEP,
+          weight: 3,
+          dashArray: '2 6',
+          lineCap: 'butt',
+          interactive: false,
+        }).addTo(group)
+      for (const s of stops)
+        L.marker([s.lat!, s.lng!], {
+          icon: L.divIcon({
+            html: `<span>D${s.day}</span>`,
+            className: 'px-plan',
+            iconSize: [28, 22],
+          }),
+          title: `${plan.title} 第 ${s.day} 天：${s.name}`,
+        })
+          .bindTooltip(
+            `${plan.title} · 第 ${s.day} 天：${s.name}${s.reason ? `<br>${s.reason}` : ''}`,
+          )
+          .addTo(group)
+    }
+    group.addTo(map)
+    return () => {
+      group.remove()
+    }
+  }, [map, plans])
+  return null
+}
+
 // 想去的地方：地图上的像素星星（柠檬黄，决策 0010 的装饰星星）
 const STAR_SVG = `<svg viewBox="0 0 7 7" width="26" height="26" shape-rendering="crispEdges" aria-hidden="true">${[
   '...#...',
@@ -638,7 +686,9 @@ export function MapView({
 }) {
   const [placing, setPlacing] = useState<JournalRecord | null>(null)
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null)
-  const [panel, setPanel] = useState<'wishes' | 'visited' | null>(null)
+  const [panel, setPanel] = useState<'wishes' | 'visited' | 'plans' | null>(
+    null,
+  )
   const [view, setView] = useState<View>({ center: CHINA, zoom: 4 })
   const [mode, setMode] = useState<Mode>('amap')
   const [focus, setFocus] = useState<View | null>(null)
@@ -655,6 +705,14 @@ export function MapView({
   const wishes = useMemo(() => wishRows ?? [], [wishRows])
   const visited = useMemo(() => visitedRows ?? [], [visitedRows])
   // 轨迹（决策 0022）：路线沿轨迹画，里程按轨迹算
+  const planRows = useLiveQuery(() => db.plans.toArray())
+  const plans = useMemo(() => planRows ?? [], [planRows])
+  // 地图上只画还没结束的计划
+  const [today] = useState(() => new Date().setHours(0, 0, 0, 0))
+  const activePlans = useMemo(
+    () => plans.filter((p) => p.start + p.days * 86_400_000 > today),
+    [plans, today],
+  )
   const trackRows = useLiveQuery(() => db.track.orderBy('t').toArray())
   const track = useMemo(() => trackRows ?? [], [trackRows])
   // 地图跟着时间线的搜索和筛选走（决策 0014 第 3A 条）
@@ -780,6 +838,7 @@ export function MapView({
         <LitLayer lit={lit} detail={detail} />
         {!filtering && <RouteLayer records={records} track={track} />}
         <WishMarkers wishes={openWishes} />
+        <PlanLayer plans={activePlans} />
         <PlaceMarkers
           places={places}
           byId={byId}
@@ -792,7 +851,7 @@ export function MapView({
         长按地图（电脑上右键）可以把那里加进"想去的地方"。
       </p>
 
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
           className={`px-btn px-btn-sm ${panel === 'wishes' ? 'bg-lemon' : ''}`}
@@ -809,6 +868,14 @@ export function MapView({
         >
           补以前去过的地方
         </button>
+        <button
+          type="button"
+          className={`px-btn px-btn-sm ${panel === 'plans' ? 'bg-sky' : ''}`}
+          aria-expanded={panel === 'plans'}
+          onClick={() => setPanel(panel === 'plans' ? null : 'plans')}
+        >
+          计划
+        </button>
       </div>
       {panel === 'wishes' && (
         <WishList
@@ -818,6 +885,14 @@ export function MapView({
         />
       )}
       {panel === 'visited' && <VisitedPicker visited={visited} />}
+      {panel === 'plans' && (
+        <PlanPanel
+          plans={plans}
+          records={records}
+          wishes={wishes}
+          onFocus={(lat, lng) => setFocus({ center: [lat, lng], zoom: 15 })}
+        />
+      )}
     </div>
   )
 }

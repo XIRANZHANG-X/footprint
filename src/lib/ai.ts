@@ -5,6 +5,8 @@ import {
   geocodeResponse,
   placeSearchResponse,
   boundaryResponse,
+  planResponse,
+  type PlanRequest,
   suggestResponse,
   summarizeResponse,
   transcribeResponse,
@@ -39,6 +41,7 @@ const AI_KINDS: Record<string, AiCallKind> = {
   '/describe': 'describe',
   '/preferences/suggest': 'suggest',
   '/summarize': 'summarize',
+  '/plan': 'plan',
 }
 
 const usageList = z.array(aiUsage)
@@ -142,6 +145,11 @@ export async function searchPlaces(query: string) {
       placeSearchResponse,
     )
   ).results
+}
+
+// AI 帮我排行程（决策 0024 第 4 条），只发文字
+export function planTrip(req: PlanRequest) {
+  return call('/plan', planResponse, postJson(req))
 }
 
 // 行政区边界（决策 0020 第 6、7 条）：国内的市、区县用高德，国外用 OpenStreetMap，都经过服务端

@@ -6,6 +6,9 @@ import { z } from 'zod'
 import {
   AI_USAGE_HEADER,
   boundaryRequest,
+  planContract,
+  planRequest,
+  planResponse,
   descriptionContract,
   describeRequest,
   description,
@@ -36,6 +39,8 @@ import {
   suggestUserText,
   summarySystem,
   summaryUserText,
+  PLAN_SYSTEM,
+  planUserText,
 } from './prompts.ts'
 
 type AppEnv = { Bindings: Env }
@@ -308,6 +313,40 @@ export function createApp({ requireAccessToken }: AppOptions) {
       200,
       usageHeader([usage]),
     )
+  })
+
+  // AI 帮我排行程（决策 0024 第 4 条）：只发文字，文字模型按严格格式输出；地点由 App 逐个搜索核实
+  app.post('/plan', aiRate, checkAccess, limit, requireKey, async (c) => {
+    const parsed = planRequest.safeParse(await c.req.json())
+    if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
+    const config = dashscopeConfig(c.env)
+    const { $schema: _drop, ...schema } = z.toJSONSchema(planContract)
+    const { text, usage } = await chat(config, {
+      model: config.textModel,
+      ...THINKING_OFF,
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'trip_plan', strict: true, schema },
+      },
+      messages: [
+        { role: 'system', content: PLAN_SYSTEM },
+        { role: 'user', content: planUserText(parsed.data) },
+      ],
+    })
+    let raw: unknown = null
+    try {
+      raw = parseJsonReply(text)
+    } catch {
+      // 回复里根本没有 JSON：当作格式不对
+    }
+    const plan = planResponse.safeParse(raw)
+    if (!plan.success)
+      return c.json(
+        { error: 'AI 返回的行程格式不对，请重试' },
+        502,
+        usageHeader([usage]),
+      )
+    return c.json(plan.data, 200, usageHeader([usage]))
   })
 
   // 地名接口不花百炼额度，但被滥用会让 Nominatim 封掉我们、用光高德的免费额度，所以同样要口令。

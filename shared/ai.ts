@@ -193,3 +193,54 @@ export const summarizeRequest = z.object({
 })
 export type SummarizeRequest = z.input<typeof summarizeRequest>
 export const summarizeResponse = z.object({ text: z.string() })
+
+// ---------- AI 帮我排行程（决策 0024 第 4 条） ----------
+// 只发文字：目的地、天数、补充的一句话、常记的类别和标签、在目的地去过的地方、想去清单。不发照片和正文
+
+export const MAX_PLAN_DAYS = 14
+export const planRequest = z.object({
+  destination: z.string().trim().min(1).max(40),
+  days: z.number().int().min(1).max(MAX_PLAN_DAYS),
+  note: z.string().max(200).default(''),
+  likes: z.array(z.string().max(20)).max(20).default([]),
+  visited: z.array(z.string().max(40)).max(40).default([]),
+  wishes: z.array(z.string().max(40)).max(20).default([]),
+})
+export type PlanRequest = z.input<typeof planRequest>
+
+// 给模型的严格格式（JSON Schema）
+export const planContract = z.strictObject({
+  days: z.array(
+    z.strictObject({
+      day: z.number().int(),
+      stops: z.array(z.strictObject({ name: z.string(), reason: z.string() })),
+    }),
+  ),
+})
+
+// 校验回复：比给模型的格式宽松，超长的截断，空名字丢掉
+export const planResponse = z.object({
+  days: z
+    .array(
+      z.object({
+        day: z.number().int().min(1).max(MAX_PLAN_DAYS),
+        stops: z
+          .array(
+            z.object({
+              name: z
+                .string()
+                .trim()
+                .min(1)
+                .transform((s) => s.slice(0, 40)),
+              reason: z
+                .string()
+                .catch('')
+                .transform((s) => s.trim().slice(0, 80)),
+            }),
+          )
+          .max(6),
+      }),
+    )
+    .max(MAX_PLAN_DAYS),
+})
+export type PlanResponse = z.infer<typeof planResponse>

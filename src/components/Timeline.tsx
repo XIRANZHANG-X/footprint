@@ -13,6 +13,7 @@ import {
 import { tripHeading } from '../lib/tripLabel.ts'
 import { groupTrips } from '../lib/trips.ts'
 import { computeVisits } from '../lib/visits.ts'
+import { countdown } from '../lib/plans.ts'
 import { fulfilledBy } from '../lib/wishes.ts'
 import type { Stay } from '../lib/track.ts'
 import { RecordCard } from './RecordCard.tsx'
@@ -119,6 +120,10 @@ export function Timeline({
   const wishes = useLiveQuery(() => db.wishes.toArray())
   // 轨迹（决策 0022）：出行标题的里程按轨迹算
   const track = useLiveQuery(() => db.track.orderBy('t').toArray())
+  // 倒计时（决策 0024 第 5 条）：离下次出发还有几天 / 上次出门是多少天前
+  const plans = useLiveQuery(() => db.plans.toArray())
+  const [now] = useState(() => Date.now())
+  const nextTrip = countdown(plans ?? [], trips.at(-1)?.end ?? null, now)
   const fulfilled = useMemo(
     () => fulfilledBy(wishes ?? [], records),
     [wishes, records],
@@ -169,6 +174,9 @@ export function Timeline({
   return (
     <section className="mt-6 space-y-6">
       <StaySuggestions records={records} onRecord={onRecordStay} />
+      {nextTrip && (
+        <p className="-mb-3 font-pixel text-[12px] text-ink-soft">{nextTrip}</p>
+      )}
       {records.length === 0 ? (
         <EmptyState />
       ) : (

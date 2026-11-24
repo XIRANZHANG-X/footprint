@@ -184,6 +184,17 @@
   background: var(--color-lemon);
   border-radius: 50%;
 }
+/* 计划里的地方（决策 0024） */
+.leaflet-marker-icon.px-plan {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-ink);
+  background: var(--color-sky);
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--color-ink);
+}
 /* 交通方式的小图标（决策 0022 第 7 条） */
 .leaflet-marker-icon.px-transport {
   display: flex;

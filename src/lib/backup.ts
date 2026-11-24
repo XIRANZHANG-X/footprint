@@ -7,24 +7,34 @@ import { setLastBackupAt } from './storage.ts'
 export async function exportBackup(
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ blob: Blob; name: string }> {
-  const [records, photos, edits, settings, aiCalls, wishes, visited, track] =
-    await Promise.all([
-      db.records.toArray(),
-      db.photos.toArray(),
-      db.edits.toArray(),
-      db.settings.toArray(),
-      db.aiCalls.toArray(),
-      db.wishes.toArray(),
-      db.visited.toArray(),
-      db.track.toArray(),
-    ])
+  const [
+    records,
+    photos,
+    edits,
+    settings,
+    aiCalls,
+    wishes,
+    visited,
+    track,
+    plans,
+  ] = await Promise.all([
+    db.records.toArray(),
+    db.photos.toArray(),
+    db.edits.toArray(),
+    db.settings.toArray(),
+    db.aiCalls.toArray(),
+    db.wishes.toArray(),
+    db.visited.toArray(),
+    db.track.toArray(),
+    db.plans.toArray(),
+  ])
   // 从数据库读出来的照片是 Blob（指向浏览器存的文件），这里不读内容，打包时一张一张读
   const now = Date.now()
   const blob = await packBackup(
     records,
     photos,
     now,
-    { edits, settings, aiCalls, wishes, visited, track },
+    { edits, settings, aiCalls, wishes, visited, track, plans },
     onProgress,
   )
   setLastBackupAt(now)
@@ -73,6 +83,7 @@ export async function importBackup(file: File) {
       db.wishes,
       db.visited,
       db.track,
+      db.plans,
     ],
     async () => {
       await db.records.bulkPut(data.records.map(withDefaults))
@@ -82,6 +93,7 @@ export async function importBackup(file: File) {
       await db.aiCalls.bulkPut(data.aiCalls)
       await db.wishes.bulkPut(data.wishes)
       await db.visited.bulkPut(data.visited)
+      await db.plans.bulkPut(data.plans)
       // 轨迹点的编号是自增的，导入时去掉编号重新编，按时间去重：已经有同一时刻的点就不再加
       const have = new Set(
         (await db.track.toArray()).map((p) => `${p.t},${p.lat},${p.lng}`),

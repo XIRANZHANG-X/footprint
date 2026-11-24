@@ -4,6 +4,7 @@ import {
   type DescribeRequest,
   type StyleExample,
   type SummarizeRequest,
+  type PlanRequest,
 } from '../shared/ai.ts'
 
 const COMMON_FIELDS = `- title：不超过 16 个字的标题，尽量用用户原话里的词，不要套话，不要感叹号
@@ -142,4 +143,29 @@ export function repairUserText(reply: string, problems: string[]): string {
     '原来的回复：',
     reply.slice(0, 3000),
   ].join('\n')
+}
+
+// ---------- AI 帮我排行程（决策 0024 第 4 条） ----------
+
+export const PLAN_SYSTEM = `你在帮一位用户排一次出行的行程建议，放在他私人足迹手账的"计划"里。要求：
+- 只推荐真实存在、能在地图上搜到的地方（景点、街区、公园、博物馆、有名的店），写它的正式名称，不要加括号说明
+- 每天 2~4 个地方，同一天的按顺路排
+- reason 一句话（不超过 30 个字），说明为什么推荐给这位用户：依据他常记的类型、想去清单，不要空泛的夸奖
+- 他已经去过的地方不要再推荐；想去清单里的地方优先排进去
+- 不要编造营业时间、价格、门票、交通方式这些你不确定的信息
+- 输出 JSON：{"days":[{"day":1,"stops":[{"name":"…","reason":"…"}]}]}，day 从 1 开始，共 N 天`
+
+export function planUserText(req: PlanRequest): string {
+  return [
+    `目的地：${req.destination}`,
+    `天数：${req.days}`,
+    req.note?.trim() ? `用户补充：${req.note.trim()}` : '',
+    req.likes?.length ? `他常记的类型和标签：${req.likes.join('、')}` : '',
+    req.visited?.length ? `他在这里已经去过：${req.visited.join('、')}` : '',
+    req.wishes?.length
+      ? `他的想去清单里在这里的：${req.wishes.join('、')}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }

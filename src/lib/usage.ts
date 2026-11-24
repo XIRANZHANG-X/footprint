@@ -18,7 +18,8 @@ export const PRICES: Record<
   'qwen3-asr-flash': { perSecond: 0.00022 },
 }
 
-export type AiCallKind = 'transcribe' | 'describe' | 'suggest' | 'summarize'
+export type AiCallKind =
+  'transcribe' | 'describe' | 'suggest' | 'summarize' | 'plan' // AI 帮我排行程（决策 0024）
 
 export type AiCall = {
   id: string

@@ -141,6 +141,29 @@ export type VisitedPlace = {
   addedAt: number
 }
 
+// 计划（决策 0024）：一次还没去的出行，按天排的一串地方
+export type PlanStop = {
+  id: string
+  day: number // 第几天，从 1 开始
+  name: string
+  lat: number | null // 没核实（地图上搜不到）时为 null
+  lng: number | null
+  address: string | null
+  boundary: string | null
+  shape: ShapeData | null // 城市、景区按边界判断到没到
+  note: string
+  reason: string | null // AI 排的才有：为什么推荐给你
+}
+export type Plan = {
+  id: string
+  title: string
+  start: number // 出发那天的本地零点
+  days: number
+  stops: PlanStop[]
+  createdAt: number
+  source: 'manual' | 'ai'
+}
+
 // 所有数据只存在本机的 IndexedDB 里（决策 0002：服务端不存用户数据）
 export const db = new Dexie('footprint-journal') as Dexie & {
   records: EntityTable<JournalRecord, 'id'>
@@ -153,6 +176,7 @@ export const db = new Dexie('footprint-journal') as Dexie & {
   wishes: EntityTable<Wish, 'id'>
   visited: EntityTable<VisitedPlace, 'id'>
   track: EntityTable<TrackPoint, 'id'>
+  plans: EntityTable<Plan, 'id'>
 }
 
 db.version(1).stores({
@@ -265,4 +289,19 @@ db.version(9).stores({
   wishes: 'id, addedAt',
   visited: 'id',
   track: '++id, t',
+})
+
+// v10（决策 0024）：计划。只在本机，会进备份
+db.version(10).stores({
+  records: 'id, takenAt',
+  photos: 'id, recordId',
+  edits: 'id, recordId, at',
+  settings: 'key',
+  drafts: 'id',
+  embeddings: 'recordId',
+  aiCalls: 'id, at',
+  wishes: 'id, addedAt',
+  visited: 'id',
+  track: '++id, t',
+  plans: 'id, start',
 })
