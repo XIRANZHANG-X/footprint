@@ -5,6 +5,7 @@ import { timingSafeEqual } from 'hono/utils/buffer'
 import { z } from 'zod'
 import {
   AI_USAGE_HEADER,
+  boundaryRequest,
   descriptionContract,
   describeRequest,
   description,
@@ -25,7 +26,7 @@ import {
   UpstreamError,
 } from './dashscope.ts'
 import type { Env } from './env.ts'
-import { reverseGeocode, searchPlaces } from './geocode.ts'
+import { findBoundary, findPlaces, placeName } from './places.ts'
 import {
   describeSystem,
   describeUserText,
@@ -309,13 +310,14 @@ export function createApp({ requireAccessToken }: AppOptions) {
     )
   })
 
-  // 地名接口不花百炼额度，但被滥用会让 Nominatim 封掉我们，所以同样要口令
+  // 地名接口不花百炼额度，但被滥用会让 Nominatim 封掉我们、用光高德的免费额度，所以同样要口令。
+  // 国内走高德、国外走 Nominatim（决策 0021），见 places.ts
   app.get('/geocode', lightRate, checkAccess, async (c) => {
     const lat = Number(c.req.query('lat'))
     const lng = Number(c.req.query('lng'))
     if (!Number.isFinite(lat) || !Number.isFinite(lng))
       return c.json({ error: '缺少坐标' }, 400)
-    return c.json(await reverseGeocode(lat, lng))
+    return c.json(await placeName(c.env.AMAP_WEB_KEY, lat, lng))
   })
 
   // 按地名查坐标，列出候选让用户选（决策 0013 第 3 条）。同样走 Nominatim，同样要口令
@@ -323,7 +325,14 @@ export function createApp({ requireAccessToken }: AppOptions) {
     const q = (c.req.query('q') ?? '').trim()
     if (!q || q.length > MAX_PLACE_QUERY_CHARS)
       return c.json({ error: '地名不能为空，也不能太长' }, 400)
-    return c.json({ results: await searchPlaces(q) })
+    return c.json({ results: await findPlaces(c.env.AMAP_WEB_KEY, q) })
+  })
+
+  // 行政区边界（决策 0020 第 6 条）：补去过的地方、想去清单要用。只转发，不存
+  app.get('/geocode/boundary', lightRate, checkAccess, async (c) => {
+    const id = boundaryRequest.safeParse(c.req.query('id') ?? '')
+    if (!id.success) return c.json({ error: '边界编号不对' }, 400)
+    return c.json(await findBoundary(c.env.AMAP_WEB_KEY, id.data))
   })
 
   app.onError((err, c) => {

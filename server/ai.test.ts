@@ -473,7 +473,7 @@ describe('geocode helpers', () => {
 })
 
 describe('place search', () => {
-  it('turns search results into at most 3 candidates with coordinates', () => {
+  it('turns search results into at most MAX_PLACE_CANDIDATES candidates with coordinates', () => {
     const hit = (name: string, lat: string) => ({
       name,
       lat,
@@ -485,13 +485,19 @@ describe('place search', () => {
       hit('外滩源', '31.25'),
       hit('外滩美术馆', '31.26'),
       hit('外滩隧道', '31.27'),
+      hit('外滩观光隧道', '31.28'),
+      hit('外滩公园', '31.29'),
     ])
-    expect(list).toHaveLength(3)
+    expect(list).toHaveLength(5)
+    // 没有 addresstype 的条目当成地点（店、景点），不取边界
     expect(list[0]).toEqual({
       name: '外滩',
       address: '上海市 · 黄浦区',
       lat: 31.24,
       lng: 121.49,
+      kind: 'poi',
+      cc: null,
+      boundary: null,
     })
   })
 
@@ -523,12 +529,12 @@ describe('place search', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
     const res = await app.request('/api/geocode/search?q=西湖测试', {}, ENV)
-    expect(await res.json()).toEqual({
+    expect(await res.json()).toMatchObject({
       results: [{ name: '西湖', address: '杭州市', lat: 30.24, lng: 120.15 }],
     })
     const url = new URL(String(fetchMock.mock.calls[0][0]))
     expect(url.pathname).toBe('/search')
     expect(url.searchParams.get('q')).toBe('西湖测试')
-    expect(url.searchParams.get('limit')).toBe('3')
+    expect(url.searchParams.get('limit')).toBe('5')
   })
 })

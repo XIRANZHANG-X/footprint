@@ -9,6 +9,7 @@ import {
   type PrefixTable,
 } from './cnTables.ts'
 import type {
+  Admin1Name,
   GeoRequest,
   GeoResponse,
   LocatedArea,
@@ -50,6 +51,7 @@ const cityNameSet = () => (cities ??= loadAdmin().then(cityNames))
 type Request =
   | { op: 'locate'; points: { lat: number; lng: number }[] }
   | { op: 'shapes'; a1: number[]; cn: number[] }
+  | { op: 'names' }
 
 let worker: Worker | null = null
 let nextId = 1
@@ -102,6 +104,15 @@ export async function regionShapes(
   const r = await ask({ op: 'shapes', a1, cn })
   return 'a1' in r ? { a1: r.a1, cn: r.cn } : { a1: [], cn: [] }
 }
+
+// 全部省州的名字（决策 0020 第 6 条）
+export async function admin1Names(): Promise<Admin1Name[]> {
+  const r = await ask({ op: 'names' })
+  return 'names' in r ? r.names : []
+}
+
+// 国内的省、市、区县（查表数据，决策 0014），给"补以前去过的地方"的列表用
+export const adminItems = loadAdmin
 
 // 离线底图用的省州轮廓（精简得很狠，两 MB），只在在线瓦片加载失败时用
 export const loadOutline = () =>

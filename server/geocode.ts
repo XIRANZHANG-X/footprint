@@ -2,7 +2,9 @@ import {
   MAX_PLACE_CANDIDATES,
   type Geocode,
   type PlaceCandidate,
+  type PlaceKind,
 } from '../shared/ai.ts'
+import { simplifyShape, type Shape } from '../shared/simplify.ts'
 
 // Nominatim（OpenStreetMap）：坐标查地名，地名查坐标。使用政策要求：
 // 带可识别的 User-Agent、每秒最多 1 次请求、结果要缓存。
@@ -55,7 +57,7 @@ export function formatNominatim(r: NominatimResult): Geocode {
 }
 
 async function nominatim(
-  path: 'reverse' | 'search',
+  path: 'reverse' | 'search' | 'lookup',
   params: Record<string, string>,
 ): Promise<unknown> {
   const wait = lastRequestAt + MIN_INTERVAL_MS - Date.now()
@@ -100,7 +102,26 @@ export function reverseGeocode(lat: number, lng: number): Promise<Geocode> {
   })
 }
 
-type NominatimSearchResult = NominatimResult & { lat?: string; lon?: string }
+type NominatimSearchResult = NominatimResult & {
+  lat?: string
+  lon?: string
+  addresstype?: string
+  osm_type?: string
+  osm_id?: number
+}
+
+// Nominatim 的地点类型 → 我们的五级（决策 0020）
+const NOMINATIM_KIND: Record<string, PlaceKind> = {
+  country: 'country',
+  state: 'province',
+  province: 'province',
+  region: 'province',
+  city: 'city',
+  municipality: 'city',
+  county: 'district',
+  district: 'district',
+  city_district: 'district',
+}
 
 // 搜索结果 → 候选。坐标缺失或不是数字的条目丢掉
 export function formatCandidates(raw: unknown): PlaceCandidate[] {
@@ -109,7 +130,21 @@ export function formatCandidates(raw: unknown): PlaceCandidate[] {
     .map((r) => {
       // 候选里不带城市：PlaceCandidate 只有名称、地址和坐标
       const { name, address } = formatNominatim(r)
-      return { name, address, lat: Number(r.lat), lng: Number(r.lon) }
+      const kind = NOMINATIM_KIND[r.addresstype ?? ''] ?? 'poi'
+      const osm =
+        r.osm_type && r.osm_id
+          ? `${r.osm_type[0].toUpperCase()}${r.osm_id}`
+          : null
+      return {
+        name,
+        address,
+        lat: Number(r.lat),
+        lng: Number(r.lon),
+        kind,
+        cc: r.address?.country_code?.toUpperCase() ?? null,
+        // 只有行政区（关系 R）才取边界：店、景点的边界没意义
+        boundary: kind !== 'poi' && osm?.startsWith('R') ? osm : null,
+      } satisfies PlaceCandidate
     })
     .filter(
       (c) =>
@@ -141,5 +176,46 @@ export function searchPlaces(query: string): Promise<PlaceCandidate[]> {
   ).then((list) => {
     searchCache.set(key, list)
     return list
+  })
+}
+
+// 国外行政区的边界（决策 0020 第 6 条）：按 OpenStreetMap 编号取，让 Nominatim 先简化到约 500 米
+const boundaryCache = new Map<string, { name: string | null; shape: Shape }>()
+
+type GeoJson =
+  | { type: 'Polygon'; coordinates: number[][][] }
+  | { type: 'MultiPolygon'; coordinates: number[][][][] }
+  | { type: string; coordinates?: unknown }
+
+export function nominatimBoundary(
+  osm: string,
+): Promise<{ name: string | null; shape: Shape }> {
+  const hit = boundaryCache.get(osm)
+  if (hit) return Promise.resolve(hit)
+  return queued(async () => {
+    const raw = (await nominatim('lookup', {
+      osm_ids: osm,
+      polygon_geojson: '1',
+      polygon_threshold: '0.005',
+    })) as (NominatimResult & { geojson?: GeoJson })[]
+    const r = Array.isArray(raw) ? raw[0] : undefined
+    const g = r?.geojson
+    const polys: number[][][][] =
+      g?.type === 'Polygon'
+        ? [(g as { coordinates: number[][][] }).coordinates]
+        : g?.type === 'MultiPolygon'
+          ? (g as { coordinates: number[][][][] }).coordinates
+          : []
+    // GeoJSON 的点是 [经度, 纬度] 数组，平铺成 [经度, 纬度, 经度, 纬度, …]
+    const shape: Shape = polys.map((poly) =>
+      poly.map((ring) => ring.flatMap(([lng, lat]) => [lng, lat])),
+    )
+    return {
+      name: r?.name?.trim() || null,
+      shape: simplifyShape(shape, 0.005),
+    }
+  }).then((b) => {
+    boundaryCache.set(osm, b)
+    return b
   })
 }

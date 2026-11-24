@@ -48,15 +48,27 @@ export type LocatedArea = {
 export type GeoRequest =
   | { id: number; op: 'locate'; points: { lat: number; lng: number }[] }
   | { id: number; op: 'shapes'; a1: number[]; cn: number[] }
+  // 全部省州的名字（不带形状），给"补以前去过的地方"的列表用（决策 0020 第 6 条）
+  | { id: number; op: 'names' }
+
+export type Admin1Name = { index: number; n: string; en: string; cc: string }
 
 export type Shape = { index: number; g: Ring[][] }
 
 export type GeoResponse =
   | { id: number; areas: (LocatedArea | null)[] }
   | { id: number; a1: Shape[]; cn: Shape[] }
+  | { id: number; names: Admin1Name[] }
   | { id: number; error: string }
 
 async function handle(req: GeoRequest): Promise<GeoResponse> {
+  if (req.op === 'names') {
+    const regions = await getAdmin1()
+    return {
+      id: req.id,
+      names: regions.map((r, index) => ({ index, n: r.n, en: r.en, cc: r.cc })),
+    }
+  }
   if (req.op === 'locate') {
     const regions = await getAdmin1()
     const needChina = req.points.map((p) => {

@@ -11,6 +11,8 @@ export type Env = {
   TEXT_MODEL?: string
   // 访问口令（决策 0008）
   ACCESS_TOKEN?: string
+  // 高德 Web 服务的 key（决策 0021）：国内的地名、地点搜索、行政区边界。没配就全部用 Nominatim
+  AMAP_WEB_KEY?: string
   // Cloudflare 的限流绑定（决策 0018 第 3 条），在 wrangler.jsonc 的 ratelimits 里配置。
   // 本机 Node 没有这两个绑定，就不限流
   AI_RATE_LIMIT?: RateLimiter

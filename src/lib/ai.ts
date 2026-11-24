@@ -4,6 +4,7 @@ import {
   description,
   geocodeResponse,
   placeSearchResponse,
+  boundaryResponse,
   suggestResponse,
   summarizeResponse,
   transcribeResponse,
@@ -141,6 +142,14 @@ export async function searchPlaces(query: string) {
       placeSearchResponse,
     )
   ).results
+}
+
+// 行政区边界（决策 0020 第 6、7 条）：国内的市、区县用高德，国外用 OpenStreetMap，都经过服务端
+export function fetchBoundary(id: string) {
+  return call(
+    `/geocode/boundary?id=${encodeURIComponent(id)}`,
+    boundaryResponse,
+  )
 }
 
 // ready：可以用 AI；needsToken：服务端要求口令，但本机没有或不对；

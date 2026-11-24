@@ -129,19 +129,48 @@ export const geocodeResponse = z.object({
 })
 export type Geocode = z.infer<typeof geocodeResponse>
 
-// 按地名查坐标（决策 0013 第 3 条）：最多 3 个候选，带上所在城市，让用户自己选
+// 按地名查坐标（决策 0013 第 3 条）：列出候选，让用户自己选。
+// 国内先查高德、国外查 Nominatim（决策 0021），两边各取几个
 export const MAX_PLACE_QUERY_CHARS = 60
-export const MAX_PLACE_CANDIDATES = 3
+export const MAX_PLACE_CANDIDATES = 5
+
+// 候选是什么级别的地方：行政区可以取边界（补去过的地方、想去清单要用，决策 0020）
+export const PLACE_KINDS = [
+  'country',
+  'province',
+  'city',
+  'district',
+  'poi',
+] as const
+export type PlaceKind = (typeof PLACE_KINDS)[number]
+
 export const placeCandidate = z.object({
   name: z.string().nullable(),
   address: z.string().nullable(),
+  // 坐标一律是 WGS-84：高德返回的 GCJ-02 在服务端换算过（决策 0021）
   lat: z.number(),
   lng: z.number(),
+  // 后来加的字段，旧版服务端没有
+  kind: z.enum(PLACE_KINDS).optional().catch(undefined),
+  cc: z.string().nullable().optional(), // 国家代码（两位大写字母）
+  // 取边界用的编号：国内是高德的行政区代码（6 位），国外是 OpenStreetMap 的编号（如 R3221112）
+  boundary: z.string().nullable().optional(),
 })
 export type PlaceCandidate = z.infer<typeof placeCandidate>
 export const placeSearchResponse = z.object({
   results: z.array(placeCandidate),
 })
+
+// 行政区边界（决策 0020 第 6 条、0021）。坐标 WGS-84，按 [经度, 纬度, …] 平铺，
+// 结构是"多边形 → 环 → 坐标"，和打包的边界数据一样
+export const boundaryRequest = z
+  .string()
+  .regex(/^(\d{6}|[NWR]\d{1,12})$/, '边界编号不对')
+export const boundaryResponse = z.object({
+  name: z.string().nullable(),
+  shape: z.array(z.array(z.array(z.number()))),
+})
+export type Boundary = z.infer<typeof boundaryResponse>
 
 // 让模型根据最近的修改，提出一版新的偏好说明（决策 0012 第 6 条）
 export const suggestRequest = z.object({

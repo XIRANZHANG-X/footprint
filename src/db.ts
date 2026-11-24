@@ -1,5 +1,5 @@
 import { Dexie, type EntityTable } from 'dexie'
-import type { DescribeMode, Description } from '../shared/ai.ts'
+import type { DescribeMode, Description, PlaceKind } from '../shared/ai.ts'
 import type { Area } from './lib/geo/area.ts'
 import type { AiCall } from './lib/usage.ts'
 import type { LatLng, TimeSource } from './lib/photoMeta.ts'
@@ -102,6 +102,42 @@ export type StoredPhoto = {
   thumb: Blob
 }
 
+// 行政区边界（决策 0020）：多边形 → 环 → [经度, 纬度, …]，WGS-84，和打包的边界数据同一种结构
+export type ShapeData = number[][][]
+
+// 想去的地方（决策 0020 第 7 条）。"去过了"不存，按记录现算（lib/wishes.ts）；
+// 只存用户手动改的结果：判错了可以拿回来，或者手动标成去过了
+export type Wish = {
+  id: string
+  name: string
+  address: string | null
+  lat: number
+  lng: number
+  kind: PlaceKind | 'pin' // pin：在地图上长按加的点
+  boundary: string | null // 取边界用的编号（见 shared/ai.ts）
+  shape: ShapeData | null // 城市、景区这类有边界的地方，按边界判断去没去过
+  note: string
+  addedAt: number
+  manual: 'done' | 'undone' | null
+}
+
+// 补的以前去过的地方（决策 0020 第 6 条）
+// - country：整个国家，按国家代码点亮它的所有省州
+// - a1：一个省、州（打包的边界数据里的序号）
+// - cn：国内的地级市、区县（行政区代码），边界联网时从高德取
+// - custom：列表里没有、自己填的名字；联网时查一次，查到就补上国家、城市和边界
+export type VisitedPlace = {
+  id: string
+  kind: 'country' | 'a1' | 'cn' | 'custom'
+  name: string
+  cc: string | null
+  a1: number | null
+  code: string | null // 国内的行政区代码（6 位）
+  city: string | null // 算"城市数"用；省、国家为 null（直辖市除外）
+  shape: ShapeData | null
+  addedAt: number
+}
+
 // 所有数据只存在本机的 IndexedDB 里（决策 0002：服务端不存用户数据）
 export const db = new Dexie('footprint-journal') as Dexie & {
   records: EntityTable<JournalRecord, 'id'>
@@ -111,6 +147,8 @@ export const db = new Dexie('footprint-journal') as Dexie & {
   drafts: EntityTable<Draft, 'id'>
   embeddings: EntityTable<Embedding, 'recordId'>
   aiCalls: EntityTable<AiCall, 'id'>
+  wishes: EntityTable<Wish, 'id'>
+  visited: EntityTable<VisitedPlace, 'id'>
 }
 
 db.version(1).stores({
@@ -196,4 +234,17 @@ db.version(7).stores({
   drafts: 'id',
   embeddings: 'recordId',
   aiCalls: 'id, at',
+})
+
+// v8（决策 0020）：想去的地方、补的以前去过的地方，都只在本机，会进备份
+db.version(8).stores({
+  records: 'id, takenAt',
+  photos: 'id, recordId',
+  edits: 'id, recordId, at',
+  settings: 'key',
+  drafts: 'id',
+  embeddings: 'recordId',
+  aiCalls: 'id, at',
+  wishes: 'id, addedAt',
+  visited: 'id',
 })

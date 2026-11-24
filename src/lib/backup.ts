@@ -7,20 +7,23 @@ import { setLastBackupAt } from './storage.ts'
 export async function exportBackup(
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ blob: Blob; name: string }> {
-  const [records, photos, edits, settings, aiCalls] = await Promise.all([
-    db.records.toArray(),
-    db.photos.toArray(),
-    db.edits.toArray(),
-    db.settings.toArray(),
-    db.aiCalls.toArray(),
-  ])
+  const [records, photos, edits, settings, aiCalls, wishes, visited] =
+    await Promise.all([
+      db.records.toArray(),
+      db.photos.toArray(),
+      db.edits.toArray(),
+      db.settings.toArray(),
+      db.aiCalls.toArray(),
+      db.wishes.toArray(),
+      db.visited.toArray(),
+    ])
   // 从数据库读出来的照片是 Blob（指向浏览器存的文件），这里不读内容，打包时一张一张读
   const now = Date.now()
   const blob = await packBackup(
     records,
     photos,
     now,
-    { edits, settings, aiCalls },
+    { edits, settings, aiCalls, wishes, visited },
     onProgress,
   )
   setLastBackupAt(now)
@@ -60,13 +63,23 @@ export async function importBackup(file: File) {
   const photos: StoredPhoto[] = data.photos
   await db.transaction(
     'rw',
-    [db.records, db.photos, db.edits, db.settings, db.aiCalls],
+    [
+      db.records,
+      db.photos,
+      db.edits,
+      db.settings,
+      db.aiCalls,
+      db.wishes,
+      db.visited,
+    ],
     async () => {
       await db.records.bulkPut(data.records.map(withDefaults))
       await db.photos.bulkPut(photos)
       await db.edits.bulkPut(data.edits)
       await db.settings.bulkPut(data.settings)
       await db.aiCalls.bulkPut(data.aiCalls)
+      await db.wishes.bulkPut(data.wishes)
+      await db.visited.bulkPut(data.visited)
     },
   )
   return {

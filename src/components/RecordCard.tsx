@@ -328,6 +328,7 @@ export function RecordCard({
   onDelete,
   visit,
   tripLabel,
+  wish,
 }: {
   record: JournalRecord
   onDelete: (recordId: string) => void
@@ -335,6 +336,8 @@ export function RecordCard({
   visit?: VisitInfo
   // 搜索结果平铺显示时，标明这条属于哪次出行（决策 0014 第 3A 条）
   tripLabel?: string
+  // 这条记录实现了哪个"想去的地方"（决策 0020 第 7 条）
+  wish?: string
 }) {
   const photos = useLiveQuery(
     () => db.photos.where('recordId').equals(record.id).sortBy('order'),
@@ -404,6 +407,14 @@ export function RecordCard({
             {visit?.firstInCity && (
               <span className="px-tag bg-taro">
                 第一次来{visit.firstInCity}
+              </span>
+            )}
+            {wish && (
+              <span
+                className="px-tag bg-lemon"
+                title={`实现了想去的地方：${wish}`}
+              >
+                ★ 想去的地方
               </span>
             )}
           </p>

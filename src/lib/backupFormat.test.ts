@@ -232,3 +232,49 @@ describe('stored zip', () => {
     expect(new Uint8Array(await out.arrayBuffer())).toEqual(text)
   })
 })
+
+describe('backups carry wishes and places added by hand', () => {
+  it('round-trips both lists, and old backups give empty lists', async () => {
+    const wishes = [
+      {
+        id: 'w1',
+        name: '某家咖啡馆',
+        address: null,
+        lat: 25.6,
+        lng: 100.2,
+        kind: 'poi' as const,
+        boundary: null,
+        shape: null,
+        note: '想去',
+        addedAt: 5,
+        manual: null,
+      },
+    ]
+    const visited = [
+      {
+        id: 'v1',
+        kind: 'cn' as const,
+        name: '杭州市',
+        cc: 'CN',
+        a1: null,
+        code: '330100',
+        city: '杭州市',
+        shape: [[[120, 30, 120.1, 30, 120.1, 30.1, 120, 30]]],
+        addedAt: 6,
+      },
+    ]
+    const out = await unpackBackup(
+      await packBackup([record], [], 1, {
+        edits: [],
+        settings: [],
+        wishes,
+        visited,
+      }),
+    )
+    expect(out.wishes).toEqual(wishes)
+    expect(out.visited).toEqual(visited)
+    const old = await unpackBackup(await packBackup([record], [], 1))
+    expect(old.wishes).toEqual([])
+    expect(old.visited).toEqual([])
+  })
+})

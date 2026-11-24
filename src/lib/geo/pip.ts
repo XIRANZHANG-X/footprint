@@ -93,3 +93,13 @@ export function locate(regions: Region[], lat: number, lng: number): number {
   }
   return best
 }
+
+// 点在不在一组多边形里，不带范围框（决策 0020 的想去清单用：边界是联网取来的，没有预先算范围框）
+export function inShape(shape: Ring[][], lng: number, lat: number): boolean {
+  return shape.some(
+    ([outer, ...holes]) =>
+      outer !== undefined &&
+      inRing(outer, lng, lat) &&
+      !holes.some((h) => inRing(h, lng, lat)),
+  )
+}

@@ -1,5 +1,6 @@
+import { useLiveQuery } from 'dexie-react-hooks'
 import { lazy, Suspense, useMemo, useState } from 'react'
-import type { JournalRecord } from '../db.ts'
+import { db, type JournalRecord } from '../db.ts'
 import { cityOf } from '../lib/geo/area.ts'
 import { isStarCenter, STAR } from '../lib/pixelStar.ts'
 import { setTripBreak } from '../lib/recordEdits.ts'
@@ -12,6 +13,7 @@ import {
 import { tripHeading } from '../lib/tripLabel.ts'
 import { groupTrips } from '../lib/trips.ts'
 import { computeVisits } from '../lib/visits.ts'
+import { fulfilledBy } from '../lib/wishes.ts'
 import { RecordCard } from './RecordCard.tsx'
 
 // 语义搜索要加载模型，出行总结要调 AI，都只在用到时加载
@@ -109,6 +111,12 @@ export function Timeline({
     [records],
   )
   const [summarizing, setSummarizing] = useState<string | null>(null)
+  // 实现了哪个想去的地方（决策 0020 第 7 条）
+  const wishes = useLiveQuery(() => db.wishes.toArray())
+  const fulfilled = useMemo(
+    () => fulfilledBy(wishes ?? [], records),
+    [wishes, records],
+  )
   const oldestTripId = trips[0]?.id
 
   const card = (r: JournalRecord, tripLabel?: string) => (
@@ -118,6 +126,7 @@ export function Timeline({
       onDelete={onDelete}
       visit={visits.get(r.id)}
       tripLabel={tripLabel}
+      wish={fulfilled.get(r.id)}
     />
   )
 

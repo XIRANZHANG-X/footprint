@@ -184,3 +184,8 @@
   background: var(--color-lemon);
   border-radius: 50%;
 }
+/* 想去的地方：只有像素星星本身，不要 Leaflet 默认的白底方框（决策 0020 第 7 条） */
+.leaflet-marker-icon.px-wish {
+  background: transparent;
+  border: 0;
+}

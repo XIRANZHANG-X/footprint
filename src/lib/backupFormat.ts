@@ -1,5 +1,12 @@
 import { z } from 'zod'
-import type { EditEntry, JournalRecord, Setting, StoredPhoto } from '../db.ts'
+import type {
+  EditEntry,
+  JournalRecord,
+  Setting,
+  StoredPhoto,
+  VisitedPlace,
+  Wish,
+} from '../db.ts'
 import type { AiCall } from './usage.ts'
 import {
   buildStoredZip,
@@ -60,6 +67,13 @@ const manifestSchema = z.object({
   aiCalls: z
     .array(z.object({ id: z.string(), at: z.number() }).loose())
     .default([]),
+  // 想去的地方、补的以前去过的地方（决策 0020），同样是后来加的
+  wishes: z
+    .array(z.object({ id: z.string(), addedAt: z.number() }).loose())
+    .default([]),
+  visited: z
+    .array(z.object({ id: z.string(), kind: z.string() }).loose())
+    .default([]),
 })
 
 // 修改记录和设置：学到的写作习惯也要能跟着备份走（决策 0012）
@@ -67,6 +81,8 @@ export type BackupExtras = {
   edits: EditEntry[]
   settings: Setting[]
   aiCalls?: AiCall[]
+  wishes?: Wish[]
+  visited?: VisitedPlace[]
 }
 
 const photoPath = (id: string) => `photos/${id}.jpg`
@@ -115,6 +131,8 @@ export async function unpackBackup(file: Blob): Promise<{
   edits: EditEntry[]
   settings: Setting[]
   aiCalls: AiCall[]
+  wishes: Wish[]
+  visited: VisitedPlace[]
 }> {
   let index
   try {
@@ -154,5 +172,7 @@ export async function unpackBackup(file: Blob): Promise<{
     edits: manifest.edits as unknown as EditEntry[],
     settings: manifest.settings as Setting[],
     aiCalls: manifest.aiCalls as unknown as AiCall[],
+    wishes: manifest.wishes as unknown as Wish[],
+    visited: manifest.visited as unknown as VisitedPlace[],
   }
 }
