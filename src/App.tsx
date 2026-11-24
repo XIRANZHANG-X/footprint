@@ -510,6 +510,7 @@ function App() {
               filters={filters}
               onDelete={(id) => void onDelete(id)}
               onShowMap={() => setTab('map')}
+              canAsk={aiReady}
               onRecordStay={(stay) =>
                 startComposing([], '', {
                   location: { lat: stay.lat, lng: stay.lng },

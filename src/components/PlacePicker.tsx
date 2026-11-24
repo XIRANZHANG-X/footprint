@@ -5,6 +5,7 @@ import { db, type JournalRecord } from '../db.ts'
 import { placeLabel, searchPlaces } from '../lib/ai.ts'
 import type { ClueCity } from '../lib/geo/cnTables.ts'
 import { sameDayPlaces } from '../lib/places.ts'
+import { LocateAgent } from './LocateAgent.tsx'
 import { applyPlace, setPlaceNameOnly } from '../lib/recordEdits.ts'
 
 const DAY_MS = 86_400_000
@@ -154,6 +155,8 @@ export function PlacePicker({
           </div>
         </div>
       )}
+
+      <LocateAgent recordId={record.id} onPlaced={onClose} />
 
       <form
         onSubmit={(e) => {

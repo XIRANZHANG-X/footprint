@@ -22,7 +22,14 @@ import {
   type DescribeMode,
 } from '../shared/ai.ts'
 import {
+  AGENT_TOOLS,
+  agentRequest,
+  agentResponse,
+  type ToolCall,
+} from '../shared/agents.ts'
+import {
   chat,
+  chatWithTools,
   dashscopeConfig,
   parseJsonReply,
   THINKING_OFF,
@@ -43,6 +50,7 @@ import {
   summaryUserText,
   PLAN_SYSTEM,
   planUserText,
+  agentSystem,
 } from './prompts.ts'
 
 type AppEnv = { Bindings: Env }
@@ -349,6 +357,50 @@ export function createApp({ requireAccessToken }: AppOptions) {
         usageHeader([usage]),
       )
     return c.json(plan.data, 200, usageHeader([usage]))
+  })
+
+  // 两个带工具的 Agent（决策 0028）：服务端只转发一轮。系统提示词和工具列表按 Agent 种类在这里定，
+  // App 只能传对话；模型要调用的工具交回 App，在手机上查本机数据
+  app.post('/agent', aiRate, checkAccess, limit, requireKey, async (c) => {
+    const parsed = agentRequest.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
+    const { agent, today, messages } = parsed.data
+    const tools = Object.entries(AGENT_TOOLS[agent]).map(([name, t]) => {
+      const { $schema: _drop, ...parameters } = z.toJSONSchema(t.args)
+      return {
+        type: 'function',
+        function: { name, description: t.description, parameters },
+      }
+    })
+    const config = dashscopeConfig(c.env)
+    const { message, usage } = await chatWithTools(config, {
+      model: config.textModel,
+      ...THINKING_OFF,
+      tools,
+      parallel_tool_calls: true,
+      messages: [
+        { role: 'system', content: agentSystem(agent, today) },
+        ...messages,
+      ],
+    })
+    // 只放行这个 Agent 自己的工具；模型偶尔会编出不存在的工具名
+    const known = AGENT_TOOLS[agent]
+    const calls = z
+      .array(z.unknown())
+      .catch([])
+      .parse(message.tool_calls)
+      .flatMap((t): ToolCall[] => {
+        const r = agentResponse.shape.toolCalls.element.safeParse(t)
+        return r.success && r.data.function.name in known ? [r.data] : []
+      })
+    return c.json(
+      {
+        content: typeof message.content === 'string' ? message.content : null,
+        toolCalls: calls,
+      },
+      200,
+      usageHeader([usage]),
+    )
   })
 
   // 地名接口不花百炼额度，但被滥用会让 Nominatim 封掉我们、用光高德的免费额度，所以同样要口令。

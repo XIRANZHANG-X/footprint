@@ -1,3 +1,4 @@
+import { agentResponse, type AgentRequest } from '../../shared/agents.ts'
 import {
   AI_USAGE_HEADER,
   aiUsage,
@@ -43,6 +44,7 @@ const AI_KINDS: Record<string, AiCallKind> = {
   '/preferences/suggest': 'suggest',
   '/summarize': 'summarize',
   '/plan': 'plan',
+  '/agent': 'agent',
 }
 
 const usageList = z.array(aiUsage)
@@ -146,6 +148,11 @@ export async function searchPlaces(query: string) {
       placeSearchResponse,
     )
   ).results
+}
+
+// 带工具的 Agent 的一轮（决策 0028）
+export function agentTurn(req: AgentRequest) {
+  return call('/agent', agentResponse, postJson(req))
 }
 
 // AI 帮我排行程（决策 0024 第 4 条），只发文字

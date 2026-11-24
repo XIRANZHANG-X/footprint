@@ -26,6 +26,9 @@ const SemanticResults = lazy(() =>
 const TripReview = lazy(() =>
   import('./TripReview.tsx').then((m) => ({ default: m.TripReview })),
 )
+const AskPanel = lazy(() =>
+  import('./AskPanel.tsx').then((m) => ({ default: m.AskPanel })),
+)
 const TripSummary = lazy(() =>
   import('./TripSummary.tsx').then((m) => ({ default: m.TripSummary })),
 )
@@ -106,9 +109,12 @@ export function Timeline({
   onDelete,
   onShowMap,
   onRecordStay,
+  canAsk = false,
 }: {
   records: JournalRecord[]
   filters: Filters
+  // 能连上 AI 时显示"问问我的足迹"（决策 0028）
+  canAsk?: boolean
   onDelete: (recordId: string) => void
   onShowMap: () => void
   onRecordStay: (stay: Stay) => void
@@ -179,6 +185,11 @@ export function Timeline({
 
   return (
     <section className="mt-6 space-y-6">
+      {canAsk && records.length > 0 && (
+        <Suspense fallback={null}>
+          <AskPanel render={(r) => card(r)} />
+        </Suspense>
+      )}
       <StaySuggestions records={records} onRecord={onRecordStay} />
       {nextTrip && (
         <p className="-mb-3 font-pixel text-[12px] text-ink-soft">{nextTrip}</p>

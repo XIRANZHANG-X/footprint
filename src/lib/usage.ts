@@ -19,7 +19,12 @@ export const PRICES: Record<
 }
 
 export type AiCallKind =
-  'transcribe' | 'describe' | 'suggest' | 'summarize' | 'plan' // AI 帮我排行程（决策 0024）
+  | 'transcribe'
+  | 'describe'
+  | 'suggest'
+  | 'summarize'
+  | 'plan' // AI 帮我排行程（决策 0024）
+  | 'agent' // 问问我的足迹、帮我找地点，每一轮记一次（决策 0028）
 
 export type AiCall = {
   id: string

@@ -27,6 +27,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "eval": "tsx scripts/eval_prompts.ts",
+    "eval:agents": "tsx scripts/eval_agents.ts",
     "check": "tsc -b && npm run lint && npm test && npm run format:check",
     "lint": "oxlint",
     "format": "prettier --write .",

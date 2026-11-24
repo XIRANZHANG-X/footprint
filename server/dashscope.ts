@@ -32,7 +32,7 @@ export class UpstreamError extends Error {
 
 type ChatResponse = {
   model?: string
-  choices?: { message?: { content?: unknown } }[]
+  choices?: { message?: { content?: unknown; tool_calls?: unknown } }[]
   usage?: {
     prompt_tokens?: number
     completion_tokens?: number
@@ -44,11 +44,10 @@ export type ChatResult = { text: string; usage: AiUsage }
 
 const num = (v: unknown) => (typeof v === 'number' ? v : null)
 
-// 调用 /chat/completions，返回第一条回复的文本，以及这次用了多少（决策 0016 第 3 条）
-export async function chat(
+async function complete(
   { apiKey, baseUrl }: DashscopeConfig,
   body: Record<string, unknown>,
-): Promise<ChatResult> {
+): Promise<{ data: ChatResponse; usage: AiUsage }> {
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -64,17 +63,46 @@ export async function chat(
     throw new UpstreamError(`百炼返回 ${res.status}: ${detail}`, res.status)
   }
   const data = (await res.json()) as ChatResponse
-  const content = data.choices?.[0]?.message?.content
-  if (typeof content !== 'string')
-    throw new UpstreamError('百炼返回格式异常', 502)
   return {
-    text: content,
+    data,
     usage: {
       model: typeof body.model === 'string' ? body.model : (data.model ?? ''),
       inputTokens: num(data.usage?.prompt_tokens),
       outputTokens: num(data.usage?.completion_tokens),
       seconds: num(data.usage?.seconds),
     },
+  }
+}
+
+// 调用 /chat/completions，返回第一条回复的文本，以及这次用了多少（决策 0016 第 3 条）
+export async function chat(
+  config: DashscopeConfig,
+  body: Record<string, unknown>,
+): Promise<ChatResult> {
+  const { data, usage } = await complete(config, body)
+  const content = data.choices?.[0]?.message?.content
+  if (typeof content !== 'string')
+    throw new UpstreamError('百炼返回格式异常', 502)
+  return { text: content, usage }
+}
+
+// 带工具的一轮（决策 0028）：回复可能是文字，也可能是要调用的工具
+export async function chatWithTools(
+  config: DashscopeConfig,
+  body: Record<string, unknown>,
+): Promise<{
+  message: { content: unknown; tool_calls: unknown }
+  usage: AiUsage
+}> {
+  const { data, usage } = await complete(config, body)
+  const message = data.choices?.[0]?.message
+  if (!message) throw new UpstreamError('百炼返回格式异常', 502)
+  return {
+    message: {
+      content: message.content ?? null,
+      tool_calls: message.tool_calls ?? [],
+    },
+    usage,
   }
 }
 
