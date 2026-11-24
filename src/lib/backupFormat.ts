@@ -4,6 +4,7 @@ import type {
   JournalRecord,
   Plan,
   Setting,
+  ShareLink,
   StoredPhoto,
   VisitedPlace,
   Wish,
@@ -76,6 +77,10 @@ const manifestSchema = z.object({
   visited: z
     .array(z.object({ id: z.string(), kind: z.string() }).loose())
     .default([]),
+  // 跟着看的链接（决策 0026）
+  shares: z
+    .array(z.object({ id: z.string(), tripId: z.string() }).loose())
+    .default([]),
   // 计划（决策 0024）
   plans: z
     .array(z.object({ id: z.string(), start: z.number() }).loose())
@@ -97,6 +102,7 @@ export type BackupExtras = {
   visited?: VisitedPlace[]
   track?: TrackPoint[]
   plans?: Plan[]
+  shares?: ShareLink[]
 }
 
 const photoPath = (id: string) => `photos/${id}.jpg`
@@ -149,6 +155,7 @@ export async function unpackBackup(file: Blob): Promise<{
   visited: VisitedPlace[]
   track: TrackPoint[]
   plans: Plan[]
+  shares: ShareLink[]
 }> {
   let index
   try {
@@ -192,5 +199,6 @@ export async function unpackBackup(file: Blob): Promise<{
     visited: manifest.visited as unknown as VisitedPlace[],
     track: manifest.track as unknown as TrackPoint[],
     plans: manifest.plans as unknown as Plan[],
+    shares: manifest.shares as unknown as ShareLink[],
   }
 }

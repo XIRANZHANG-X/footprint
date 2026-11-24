@@ -171,6 +171,25 @@ export type Plan = {
   source: 'manual' | 'ai'
 }
 
+// 跟着看的链接（决策 0026）。钥匙和修改钥匙只存在这台手机里；服务端只有加密后的包
+export type ShareOptions = {
+  text: boolean // 带不带正文
+  photos: boolean // 带不带照片
+  precision: 'exact' | 'rough' | 'none' // 精确 / 大概（约 5 公里）/ 不显示地图
+  days: 7 | 30 | 90
+}
+export type ShareLink = {
+  id: string
+  tripId: string // 出行的第一条记录的 id
+  key: string // 解密钥匙，在链接 # 后面
+  editKey: string // 更新、撤回用
+  options: ShareOptions
+  createdAt: number
+  updatedAt: number
+  expiresAt: number
+  recordCount: number // 上次上传时这次出行有几条，变了就自动更新
+}
+
 // 所有数据只存在本机的 IndexedDB 里（决策 0002：服务端不存用户数据）
 export const db = new Dexie('footprint-journal') as Dexie & {
   records: EntityTable<JournalRecord, 'id'>
@@ -184,6 +203,7 @@ export const db = new Dexie('footprint-journal') as Dexie & {
   visited: EntityTable<VisitedPlace, 'id'>
   track: EntityTable<TrackPoint, 'id'>
   plans: EntityTable<Plan, 'id'>
+  shares: EntityTable<ShareLink, 'id'>
 }
 
 db.version(1).stores({
@@ -311,4 +331,20 @@ db.version(10).stores({
   visited: 'id',
   track: '++id, t',
   plans: 'id, start',
+})
+
+// v11（决策 0026）：跟着看的链接。钥匙只在本机；会进备份，换手机后还能更新和撤回
+db.version(11).stores({
+  records: 'id, takenAt',
+  photos: 'id, recordId',
+  edits: 'id, recordId, at',
+  settings: 'key',
+  drafts: 'id',
+  embeddings: 'recordId',
+  aiCalls: 'id, at',
+  wishes: 'id, addedAt',
+  visited: 'id',
+  track: '++id, t',
+  plans: 'id, start',
+  shares: 'id, tripId',
 })

@@ -14,8 +14,14 @@
     // 单页应用：找不到的路径都返回 index.html
     "not_found_handling": "single-page-application",
     // 否则 /api/* 也会被当成"找不到的页面"返回 index.html
-    "run_worker_first": ["/api/*"],
+    "run_worker_first": ["/api/*", "/s/*"],
+    // 跟着看的页面要由 Worker 转给 share.html（决策 0026）
+    "binding": "ASSETS",
   },
+  // 跟着看的加密包（决策 0026）。账号没开通 R2，先用 KV
+  "kv_namespaces": [
+    { "binding": "SHARES", "id": "f809878b9a8e4d70b891a7a035596e18" },
+  ],
   "observability": { "enabled": true },
   // 按"IP + 接口"限流（决策 0018 第 3 条），代码在 server/app.ts 的 rateLimit。
   // namespace_id 是自己定的数字，在同一个 Cloudflare 账号里不重复即可；period 只能是 10 或 60 秒

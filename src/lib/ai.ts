@@ -25,10 +25,10 @@ export class ApiError extends Error {}
 
 // 接口地址：网页版为空，走同源的 /api；安卓 App 里页面来自本地，
 // 要访问线上的 Worker，地址在 .env.app 里配置（决策 0009）
-const API = `${String(import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '')}/api`
+export const API = `${String(import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '')}/api`
 
 // 带上访问口令（决策 0008）；没有口令时不加这个头
-function withToken(init: RequestInit = {}): RequestInit {
+export function withToken(init: RequestInit = {}): RequestInit {
   const token = getAccessToken()
   if (!token) return init
   const headers = new Headers(init.headers)

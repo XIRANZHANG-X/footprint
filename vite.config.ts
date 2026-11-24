@@ -58,7 +58,7 @@ function pwa(mode: string) {
       maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       navigateFallback: 'index.html',
       // 接口不缓存，走网络
-      navigateFallbackDenylist: [/^\/api\//],
+      navigateFallbackDenylist: [/^\/api\//, /^\/s\//],
       cleanupOutdatedCaches: true,
       runtimeCaching: [
         {
@@ -94,6 +94,12 @@ export default defineConfig(({ mode }) => {
     ],
     // 偏好页底部显示的版本号，和安卓安装包的版本号同出 package.json（决策 0017 第 2 条）
     define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+    // 两个页面：App 本身，和朋友看的"跟着看"页（决策 0026），后者不加载 App 的代码
+    build: {
+      rollupOptions: {
+        input: { main: 'index.html', share: 'share.html' },
+      },
+    },
     worker: { format: 'es', plugins: () => [dropUnusedOrtWasm()] },
     server: {
       host: phone ? true : undefined,

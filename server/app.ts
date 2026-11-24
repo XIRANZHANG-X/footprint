@@ -30,6 +30,7 @@ import {
 } from './dashscope.ts'
 import type { Env } from './env.ts'
 import { findBoundary, findPlaces, placeName } from './places.ts'
+import { shareRoutes } from './share.ts'
 import { weatherAt } from './weather.ts'
 import {
   describeSystem,
@@ -374,6 +375,9 @@ export function createApp({ requireAccessToken }: AppOptions) {
     if (!id.success) return c.json({ error: '边界编号不对' }, 400)
     return c.json(await findBoundary(c.env.AMAP_WEB_KEY, id.data))
   })
+
+  // 跟着看（决策 0026）：加密的只读链接
+  app.route('/share', shareRoutes(checkAccess, lightRate))
 
   // 当时的天气（决策 0025）：坐标和时间转发给 Open-Meteo，不存
   app.get('/weather', lightRate, checkAccess, async (c) => {

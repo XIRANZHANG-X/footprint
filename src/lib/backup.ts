@@ -17,6 +17,7 @@ export async function exportBackup(
     visited,
     track,
     plans,
+    shares,
   ] = await Promise.all([
     db.records.toArray(),
     db.photos.toArray(),
@@ -27,6 +28,7 @@ export async function exportBackup(
     db.visited.toArray(),
     db.track.toArray(),
     db.plans.toArray(),
+    db.shares.toArray(),
   ])
   // 从数据库读出来的照片是 Blob（指向浏览器存的文件），这里不读内容，打包时一张一张读
   const now = Date.now()
@@ -34,7 +36,16 @@ export async function exportBackup(
     records,
     photos,
     now,
-    { edits, settings, aiCalls, wishes, visited, track, plans },
+    {
+      edits,
+      settings,
+      aiCalls,
+      wishes,
+      visited,
+      track,
+      plans,
+      shares,
+    },
     onProgress,
   )
   setLastBackupAt(now)
@@ -84,6 +95,7 @@ export async function importBackup(file: File) {
       db.visited,
       db.track,
       db.plans,
+      db.shares,
     ],
     async () => {
       await db.records.bulkPut(data.records.map(withDefaults))
@@ -94,6 +106,7 @@ export async function importBackup(file: File) {
       await db.wishes.bulkPut(data.wishes)
       await db.visited.bulkPut(data.visited)
       await db.plans.bulkPut(data.plans)
+      await db.shares.bulkPut(data.shares)
       // 轨迹点的编号是自增的，导入时去掉编号重新编，按时间去重：已经有同一时刻的点就不再加
       const have = new Set(
         (await db.track.toArray()).map((p) => `${p.t},${p.lat},${p.lng}`),

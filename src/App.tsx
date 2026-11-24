@@ -153,6 +153,17 @@ function App() {
     return () => clearTimeout(t)
   }, [aiReady, records])
 
+  // 跟着看（决策 0026）：出行里多了记录，自动更新还没过期的链接
+  useEffect(() => {
+    if (!aiReady || !records?.length) return
+    const t = setTimeout(() => {
+      void Promise.all([import('./lib/follow.ts'), import('./lib/trips.ts')])
+        .then(([f, tr]) => f.refreshShares(tr.groupTrips(records)))
+        .catch(() => {})
+    }, 5000)
+    return () => clearTimeout(t)
+  }, [aiReady, records])
+
   // 攒够一批修改后，让 AI 提出一版新的偏好说明，等用户到偏好页确认（决策 0012 第 6 条）。
   // 修改记录的条数变了就检查一次；失败不提示，下次再试
   const editCount = useLiveQuery(() => db.edits.count())

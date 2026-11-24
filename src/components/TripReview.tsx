@@ -17,6 +17,7 @@ import {
   type TripMaterial,
 } from '../lib/tripBook.ts'
 import type { Trip } from '../lib/trips.ts'
+import { FollowLinkCard } from './FollowLinkCard.tsx'
 
 // 回看一次出行（决策 0025）：路线回放（可以存成短视频）、路线海报、PDF 手账。
 // 都在手机上生成，不上传
@@ -175,6 +176,7 @@ export function TripReview({
           {message}
         </p>
       )}
+      <FollowLinkCard trip={trip} />
       {poster && (
         <img
           src={poster}
