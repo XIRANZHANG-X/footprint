@@ -1,7 +1,8 @@
 import type { LatLng, PhotoMeta, TimeSource } from './photoMeta.ts'
 
 // manual：用户在地图上手动点选的地点
-export type LocationStatus = 'gps' | 'pending' | 'manual'
+// track：照片没带位置，按拍摄时间从轨迹里找到的（决策 0022 第 4 条）
+export type LocationStatus = 'gps' | 'pending' | 'manual' | 'track'
 
 export type RecordSummary = {
   takenAt: number

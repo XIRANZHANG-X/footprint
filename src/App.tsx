@@ -95,9 +95,12 @@ function App() {
     return () => clearTimeout(t)
   }, [records])
   // 正在写的新记录：选好的照片（"只写几句"时为空数组）和开头的文字
-  const [picked, setPicked] = useState<{ files: File[]; note: string } | null>(
-    null,
-  )
+  // at：从"停留提示"补记时已知的时间和位置（决策 0022 第 5 条）
+  const [picked, setPicked] = useState<{
+    files: File[]
+    note: string
+    at?: { location: LatLng; takenAt: number }
+  } | null>(null)
   // 上次没写完的草稿，等用户决定继续还是丢弃（决策 0013）
   const [draft, setDraft] = useState<Draft | null>(null)
   useEffect(() => {
@@ -107,10 +110,14 @@ function App() {
   const draftTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(draftTimer.current), [])
 
-  function startComposing(files: File[], note = '') {
+  function startComposing(
+    files: File[],
+    note = '',
+    at?: { location: LatLng; takenAt: number },
+  ) {
     setMessage(undefined)
     setDraft(null)
-    setPicked({ files, note })
+    setPicked({ files, note, at })
     void saveDraft(files, note)
   }
 
@@ -180,6 +187,48 @@ function App() {
     return () => clearTimeout(t)
   }, [recordCount])
 
+  // 记录路线（决策 0022）：打开 App、从后台回到前台时，把后台服务记下的点取进数据库
+  useEffect(() => {
+    if (!inNativeApp()) return
+    const sync = () =>
+      void import('./lib/trackSync.ts')
+        .then((m) => m.syncNativeTrack())
+        .catch(() => {})
+    sync()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sync()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  // 从相册"分享"进来的照片（决策 0023）：直接进新建流程。正在写别的记录时先不打断，提示一句
+  const composing = picked !== null
+  const composingRef = useRef(composing)
+  useEffect(() => {
+    composingRef.current = composing
+  }, [composing])
+  useEffect(() => {
+    if (!inNativeApp()) return
+    let stop: (() => void) | null = null
+    let cancelled = false
+    void import('./lib/shareIn.ts').then(async (m) => {
+      const s = await m.watchSharedPhotos((files) => {
+        if (composingRef.current)
+          setMessage('先写完手上这条，再从相册分享一次。')
+        else startComposing(files)
+      })
+      if (cancelled) s()
+      else stop = s
+    })
+    return () => {
+      cancelled = true
+      stop?.()
+    }
+    // startComposing 每次渲染都是新的函数，但它只用到 setState，不需要跟着重新订阅
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // 一年前的今天（决策 0014 第 3E 条）：往年同月同日有记录才显示
   const past = onThisDay(records ?? [], now)
   const [pastHidden, setPastHidden] = useState(false)
@@ -223,7 +272,7 @@ function App() {
     try {
       let recordId: string | null
       if (picked.files.length === 0) {
-        recordId = await createTextRecord(note, location)
+        recordId = await createTextRecord(note, location, picked.at?.takenAt)
         setMessage('已保存')
       } else {
         const r = await importPhotos(picked.files, note, (done, total) =>
@@ -269,6 +318,7 @@ function App() {
               files={picked.files}
               aiReady={aiReady}
               initialNote={picked.note}
+              initialHere={picked.at?.location}
               onNoteChange={(note) => onNoteChange(picked.files, note)}
               onDone={(note, body, location) =>
                 void onDone(note, body, location)
@@ -423,6 +473,12 @@ function App() {
               filters={filters}
               onDelete={(id) => void onDelete(id)}
               onShowMap={() => setTab('map')}
+              onRecordStay={(stay) =>
+                startComposing([], '', {
+                  location: { lat: stay.lat, lng: stay.lng },
+                  takenAt: stay.start,
+                })
+              }
             />
           )}
           {tab === 'map' && <MapView records={records} filters={filters} />}

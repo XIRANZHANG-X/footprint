@@ -1,7 +1,8 @@
 import type { JournalRecord, VisitedPlace } from '../db.ts'
 import { cityOf, countryName } from './geo/area.ts'
 import { shortPlace } from './review.ts'
-import { tripRoute } from './route.ts'
+import { tripPaths } from './route.ts'
+import type { TrackPoint } from './track.ts'
 import { groupTrips } from './trips.ts'
 import { distanceM } from './visits.ts'
 
@@ -23,6 +24,7 @@ export function footprint(
   records: JournalRecord[],
   visited: VisitedPlace[],
   home: Home | null,
+  track: TrackPoint[] = [],
 ): Footprint {
   const ccs = new Set<string>()
   const cities = new Set<string>()
@@ -35,8 +37,14 @@ export function footprint(
     if (v.cc) ccs.add(v.cc)
     if (v.city) cities.add(v.city)
   }
+  // 有轨迹的出行按轨迹算里程（决策 0022 第 7 条），没有的按记录之间的直线
   const km = groupTrips(records).reduce(
-    (n, t) => n + tripRoute(t.records).km,
+    (n, t) =>
+      n +
+      tripPaths(
+        t.records,
+        track.filter((p) => p.t >= t.start && p.t <= t.end),
+      ).km,
     0,
   )
   let farthest: Footprint['farthest'] = null

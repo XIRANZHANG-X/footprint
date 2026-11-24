@@ -409,6 +409,14 @@ export function RecordCard({
                 第一次来{visit.firstInCity}
               </span>
             )}
+            {record.locationStatus === 'track' && (
+              <span
+                className="px-tag bg-sky"
+                title="照片没带位置，按拍摄时间从轨迹里找到的"
+              >
+                位置来自轨迹
+              </span>
+            )}
             {wish && (
               <span
                 className="px-tag bg-lemon"

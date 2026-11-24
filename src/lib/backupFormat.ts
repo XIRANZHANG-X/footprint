@@ -7,6 +7,7 @@ import type {
   VisitedPlace,
   Wish,
 } from '../db.ts'
+import type { TrackPoint } from './track.ts'
 import type { AiCall } from './usage.ts'
 import {
   buildStoredZip,
@@ -74,6 +75,12 @@ const manifestSchema = z.object({
   visited: z
     .array(z.object({ id: z.string(), kind: z.string() }).loose())
     .default([]),
+  // 轨迹点（决策 0022），同样是后来加的
+  track: z
+    .array(
+      z.object({ t: z.number(), lat: z.number(), lng: z.number() }).loose(),
+    )
+    .default([]),
 })
 
 // 修改记录和设置：学到的写作习惯也要能跟着备份走（决策 0012）
@@ -83,6 +90,7 @@ export type BackupExtras = {
   aiCalls?: AiCall[]
   wishes?: Wish[]
   visited?: VisitedPlace[]
+  track?: TrackPoint[]
 }
 
 const photoPath = (id: string) => `photos/${id}.jpg`
@@ -133,6 +141,7 @@ export async function unpackBackup(file: Blob): Promise<{
   aiCalls: AiCall[]
   wishes: Wish[]
   visited: VisitedPlace[]
+  track: TrackPoint[]
 }> {
   let index
   try {
@@ -174,5 +183,6 @@ export async function unpackBackup(file: Blob): Promise<{
     aiCalls: manifest.aiCalls as unknown as AiCall[],
     wishes: manifest.wishes as unknown as Wish[],
     visited: manifest.visited as unknown as VisitedPlace[],
+    track: manifest.track as unknown as TrackPoint[],
   }
 }

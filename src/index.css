@@ -184,6 +184,16 @@
   background: var(--color-lemon);
   border-radius: 50%;
 }
+/* 交通方式的小图标（决策 0022 第 7 条） */
+.leaflet-marker-icon.px-transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-ink);
+  background: var(--color-paper);
+  font-size: 12px;
+  line-height: 1;
+}
 /* 想去的地方：只有像素星星本身，不要 Leaflet 默认的白底方框（决策 0020 第 7 条） */
 .leaflet-marker-icon.px-wish {
   background: transparent;

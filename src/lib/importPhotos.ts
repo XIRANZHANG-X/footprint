@@ -55,6 +55,15 @@ export async function importPhotos(
   if (photos.length === 0) return { recordId: null, imported: 0, failed }
 
   const summary = summarizeRecord(photos)
+  // 照片没带位置、但有可靠的拍摄时间：按时间到轨迹里找（决策 0022 第 4 条）
+  if (summary.location === null && summary.timeSource === 'exif') {
+    const { locationFromTrack } = await import('./trackSync.ts')
+    const loc = await locationFromTrack(summary.takenAt)
+    if (loc) {
+      summary.location = loc
+      summary.locationStatus = 'track'
+    }
+  }
   await db.transaction('rw', db.records, db.photos, async () => {
     await db.photos.bulkAdd(photos)
     await db.records.add({
@@ -108,16 +117,18 @@ export async function changePhotos(
 
 // 只写文字、没有照片的记录（决策 0013 第 4 条）：时间是写下它的这一刻，地点先空着
 // location：用户点了"用当前位置"时取到的坐标
+// takenAt：从"停留提示"补记时，时间是停留开始的那一刻（决策 0022 第 5 条），否则是现在
 export async function createTextRecord(
   note: string,
   location: LatLng | null = null,
+  takenAt?: number,
 ): Promise<string> {
   const id = crypto.randomUUID()
   const now = Date.now()
   await db.records.add({
     id,
     createdAt: now,
-    takenAt: now,
+    takenAt: takenAt ?? now,
     timeSource: 'manual',
     location,
     locationStatus: location ? 'gps' : 'pending',

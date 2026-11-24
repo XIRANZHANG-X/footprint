@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { db, type JournalRecord, type VisitedPlace } from '../db.ts'
 import { footprint, HOME_KEY, type Home } from '../lib/footprint.ts'
 import { formatKm } from '../lib/route.ts'
+import type { TrackPoint } from '../lib/track.ts'
 import { PlaceSearch } from './PlaceSearch.tsx'
 
 // 地图页顶部的"足迹总览"（决策 0020 第 4、5 条）：国家和地区、城市、总里程、离家最远、补的地方。
@@ -11,9 +12,11 @@ import { PlaceSearch } from './PlaceSearch.tsx'
 export function FootprintCard({
   records,
   visited,
+  track,
 }: {
   records: JournalRecord[]
   visited: VisitedPlace[]
+  track: TrackPoint[]
 }) {
   const home = useLiveQuery(
     async () =>
@@ -22,8 +25,8 @@ export function FootprintCard({
   const [showCountries, setShowCountries] = useState(false)
   const [settingHome, setSettingHome] = useState(false)
   const f = useMemo(
-    () => footprint(records, visited, home ?? null),
-    [records, visited, home],
+    () => footprint(records, visited, home ?? null, track),
+    [records, visited, home, track],
   )
 
   const cell = 'flex flex-col items-center px-1 py-1.5'
@@ -52,7 +55,7 @@ export function FootprintCard({
           <span className={big}>
             {formatKm(f.km)?.replace('约 ', '').replace(' 公里', '') ?? '0'}
           </span>
-          <span className={small}>公里（直线）</span>
+          <span className={small}>公里</span>
         </div>
       </div>
       {showCountries && f.countries.length > 0 && (
@@ -113,7 +116,7 @@ export function FootprintCard({
         </div>
       )}
       <p className="mt-2 text-[11px] text-ink-soft">
-        里程按每次出行里记录之间的直线算，实际走的路更长。
+        里程：记了路线的出行按轨迹算，其余按记录之间的直线算（实际走的路更长）。
       </p>
     </div>
   )

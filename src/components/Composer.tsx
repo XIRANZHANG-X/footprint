@@ -26,6 +26,7 @@ export function Composer({
   files,
   aiReady,
   initialNote = '',
+  initialHere,
   onNoteChange,
   onDone,
   onCancel,
@@ -33,13 +34,14 @@ export function Composer({
   files: File[] // 空数组表示"只写几句"，没有照片
   aiReady: boolean
   initialNote?: string // 从草稿继续时带回来的文字
+  initialHere?: LatLng | null // 从停留提示补记时，位置已经知道（决策 0022 第 5 条）
   onNoteChange?: (note: string) => void // 用来自动存草稿
   // own：直接保存，正文用自己写的；ai：让 AI 写一版（决策 0012 第 3 条）
   // location：只写几句时用户点"用当前位置"取到的坐标，没点就是 null
   onDone: (note: string, body: 'own' | 'ai', location: LatLng | null) => void
   onCancel: () => void
 }) {
-  const [here, setHere] = useState<LatLng | null>(null)
+  const [here, setHere] = useState<LatLng | null>(initialHere ?? null)
   const [locating, setLocating] = useState(false)
   const [note, setNoteState] = useState(initialNote)
   const [phase, setPhase] = useState<Phase>('idle')

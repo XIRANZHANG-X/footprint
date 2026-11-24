@@ -4,6 +4,7 @@ import type { Area } from './lib/geo/area.ts'
 import type { AiCall } from './lib/usage.ts'
 import type { LatLng, TimeSource } from './lib/photoMeta.ts'
 import type { LocationStatus } from './lib/record.ts'
+import type { TrackPoint, Transport } from './lib/track.ts'
 import type { TripBreak } from './lib/trips.ts'
 
 export type AiStatus = 'none' | 'pending' | 'done' | 'error'
@@ -40,6 +41,8 @@ export type JournalRecord = {
   aiStatus: AiStatus
   aiError: string | null
   tripBreak: TripBreak // 用户对出行归组的手动修正（见 lib/trips.ts）
+  // 从上一条记录到这一条怎么去的，用户改过才有（决策 0022 第 7 条）；没有就按轨迹猜
+  transport?: Transport | null
   // 正文用哪一版（决策 0012）：own = 用户自己写的（note），ai = AI 整理的（content.intro）。两版都留着，可以换
   bodySource: 'own' | 'ai'
   // AI 从照片里猜的地点。只是一个候选，用户点了才用（决策 0013 第 2 条）
@@ -149,6 +152,7 @@ export const db = new Dexie('footprint-journal') as Dexie & {
   aiCalls: EntityTable<AiCall, 'id'>
   wishes: EntityTable<Wish, 'id'>
   visited: EntityTable<VisitedPlace, 'id'>
+  track: EntityTable<TrackPoint, 'id'>
 }
 
 db.version(1).stores({
@@ -247,4 +251,18 @@ db.version(8).stores({
   aiCalls: 'id, at',
   wishes: 'id, addedAt',
   visited: 'id',
+})
+
+// v9（决策 0022）：轨迹点（后台记的、导入的 GPX），按时间查。只在本机，会进备份
+db.version(9).stores({
+  records: 'id, takenAt',
+  photos: 'id, recordId',
+  edits: 'id, recordId, at',
+  settings: 'key',
+  drafts: 'id',
+  embeddings: 'recordId',
+  aiCalls: 'id, at',
+  wishes: 'id, addedAt',
+  visited: 'id',
+  track: '++id, t',
 })

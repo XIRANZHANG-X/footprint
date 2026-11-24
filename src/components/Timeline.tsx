@@ -14,7 +14,9 @@ import { tripHeading } from '../lib/tripLabel.ts'
 import { groupTrips } from '../lib/trips.ts'
 import { computeVisits } from '../lib/visits.ts'
 import { fulfilledBy } from '../lib/wishes.ts'
+import type { Stay } from '../lib/track.ts'
 import { RecordCard } from './RecordCard.tsx'
+import { StaySuggestions } from './StaySuggestions.tsx'
 
 // 语义搜索要加载模型，出行总结要调 AI，都只在用到时加载
 const SemanticResults = lazy(() =>
@@ -99,11 +101,13 @@ export function Timeline({
   filters,
   onDelete,
   onShowMap,
+  onRecordStay,
 }: {
   records: JournalRecord[]
   filters: Filters
   onDelete: (recordId: string) => void
   onShowMap: () => void
+  onRecordStay: (stay: Stay) => void
 }) {
   const trips = useMemo(() => groupTrips(records), [records])
   const { visits, places } = useMemo(
@@ -113,6 +117,8 @@ export function Timeline({
   const [summarizing, setSummarizing] = useState<string | null>(null)
   // 实现了哪个想去的地方（决策 0020 第 7 条）
   const wishes = useLiveQuery(() => db.wishes.toArray())
+  // 轨迹（决策 0022）：出行标题的里程按轨迹算
+  const track = useLiveQuery(() => db.track.orderBy('t').toArray())
   const fulfilled = useMemo(
     () => fulfilledBy(wishes ?? [], records),
     [wishes, records],
@@ -162,6 +168,7 @@ export function Timeline({
 
   return (
     <section className="mt-6 space-y-6">
+      <StaySuggestions records={records} onRecord={onRecordStay} />
       {records.length === 0 ? (
         <EmptyState />
       ) : (
@@ -177,7 +184,9 @@ export function Timeline({
         return (
           <div key={trip.id}>
             <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="px-tag bg-taro px-2 py-1">{tripHeading(trip)}</h2>
+              <h2 className="px-tag bg-taro px-2 py-1">
+                {tripHeading(trip, track)}
+              </h2>
               <div className="flex gap-2">
                 <button
                   type="button"

@@ -25,12 +25,14 @@ import {
 import type { Ring } from '../lib/geo/pip.ts'
 import { setRecordLocation } from '../lib/recordEdits.ts'
 import { shortPlace } from '../lib/review.ts'
-import { arcPoints, tripRoute } from '../lib/route.ts'
+import { formatKm, tripPaths, type PathSegment } from '../lib/route.ts'
 import { applyFilters, isFiltering, type Filters } from '../lib/search.ts'
+import { TRANSPORT_LABEL, TRANSPORTS, type TrackPoint } from '../lib/track.ts'
 import { groupTrips } from '../lib/trips.ts'
 import { computeVisits, localDay, type PlaceGroup } from '../lib/visits.ts'
 import { wishState } from '../lib/wishes.ts'
 import { FootprintCard } from './FootprintCard.tsx'
+import { TrackerCard } from './TrackerCard.tsx'
 import { VisitedPicker } from './VisitedPicker.tsx'
 import { addWish } from '../lib/addWish.ts'
 import { WishList } from './WishList.tsx'
@@ -351,47 +353,98 @@ function AddedLayer({ visited }: { visited: VisitedPlace[] }) {
 
 // 每次出行的路线（决策 0020 第 1–3 条）：普通的一段画实线，超过 300 公里的画成虚线弧线。
 // 下面垫一层奶油白，在各种底图上都看得清；直角线头，保持像素感
-function RouteLayer({ records }: { records: JournalRecord[] }) {
-  const lines = useMemo(() => {
-    const out: { key: string; pts: Point[]; long: boolean }[] = []
+function RouteLayer({
+  records,
+  track,
+}: {
+  records: JournalRecord[]
+  track: TrackPoint[]
+}) {
+  const map = useMap()
+  const segments = useMemo(() => {
+    const out: (PathSegment & { key: string })[] = []
     for (const t of groupTrips(records)) {
-      const route = tripRoute(t.records)
-      route.segments.forEach((s, i) =>
-        out.push({
-          key: `${t.id}:${i}`,
-          long: s.long,
-          pts: (s.long ? arcPoints(s.from, s.to) : [s.from, s.to]).map(
-            (p): Point => [p.lat, p.lng],
-          ),
-        }),
+      // 只给这次出行时间范围里的轨迹：有没有轨迹决定了能不能按 Polarsteps 的规则判飞机
+      const inTrip = track.filter((p) => p.t >= t.start && p.t <= t.end)
+      tripPaths(t.records, inTrip).segments.forEach((s, i) =>
+        out.push({ ...s, key: `${t.id}:${i}` }),
       )
     }
     return out
-  }, [records])
+  }, [records, track])
+
+  // 交通方式的小图标：放在这一段的中间，点开可以改（决策 0022 第 7 条）
+  useEffect(() => {
+    const group = L.layerGroup()
+    for (const s of segments) {
+      if (s.path.length < 2) continue
+      const mid = s.path[Math.floor(s.path.length / 2)]
+      const icon = s.transport
+        ? TRANSPORT_LABEL[s.transport].split(' ')[0]
+        : '?'
+      const box = document.createElement('div')
+      const head = document.createElement('p')
+      head.className = 'text-xs'
+      head.textContent = s.transport
+        ? `${TRANSPORT_LABEL[s.transport]}${s.guessed ? '（猜的）' : ''} · ${formatKm(s.km) ?? '不到 1 公里'}`
+        : `怎么去的？ · ${formatKm(s.km) ?? '不到 1 公里'}`
+      box.append(head)
+      const row = document.createElement('div')
+      row.className = 'mt-1 flex flex-wrap gap-1'
+      for (const t of TRANSPORTS) {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'px-btn px-btn-sm'
+        b.textContent = TRANSPORT_LABEL[t]
+        b.onclick = () => {
+          map.closePopup()
+          void db.records.update(s.recordId, { transport: t })
+        }
+        row.append(b)
+      }
+      box.append(row)
+      L.marker([mid.lat, mid.lng], {
+        icon: L.divIcon({
+          html: `<span>${icon}</span>`,
+          className: 'px-transport',
+          iconSize: [22, 22],
+        }),
+        title: s.transport ? TRANSPORT_LABEL[s.transport] : '交通方式',
+      })
+        .bindPopup(box)
+        .addTo(group)
+    }
+    group.addTo(map)
+    return () => {
+      group.remove()
+    }
+  }, [map, segments])
+
   const base = {
     lineCap: 'butt',
     lineJoin: 'miter',
     interactive: false,
   } as const
+  const pts = (s: PathSegment) => s.path.map((p): Point => [p.lat, p.lng])
   return (
     <>
-      {lines.map((l) => (
+      {segments.map((s) => (
         <Polyline
-          key={`${l.key}:casing`}
-          positions={l.pts}
+          key={`${s.key}:casing`}
+          positions={pts(s)}
           pathOptions={{ ...base, color: PAPER, weight: 6, opacity: 0.9 }}
         />
       ))}
-      {lines.map((l) => (
+      {segments.map((s) => (
         <Polyline
-          key={l.key}
-          positions={l.pts}
+          key={s.key}
+          positions={pts(s)}
           pathOptions={{
             ...base,
             color: TARO_DEEP,
             weight: 3,
             opacity: 0.95,
-            dashArray: l.long ? '8 6' : undefined,
+            dashArray: s.long ? '8 6' : undefined,
           }}
         />
       ))}
@@ -601,6 +654,9 @@ export function MapView({
   const visitedRows = useLiveQuery(() => db.visited.toArray())
   const wishes = useMemo(() => wishRows ?? [], [wishRows])
   const visited = useMemo(() => visitedRows ?? [], [visitedRows])
+  // 轨迹（决策 0022）：路线沿轨迹画，里程按轨迹算
+  const trackRows = useLiveQuery(() => db.track.orderBy('t').toArray())
+  const track = useMemo(() => trackRows ?? [], [trackRows])
   // 地图跟着时间线的搜索和筛选走（决策 0014 第 3A 条）
   const filtering = isFiltering(filters)
   const shown = useMemo(
@@ -634,7 +690,8 @@ export function MapView({
 
   return (
     <div className="mt-5">
-      <FootprintCard records={records} visited={visited} />
+      <TrackerCard />
+      <FootprintCard records={records} visited={visited} track={track} />
 
       {placing ? (
         <div className="px-card mb-4 flex items-center justify-between gap-2 bg-lemon px-3 py-2 text-sm">
@@ -721,7 +778,7 @@ export function MapView({
         <FocusOn target={focus} />
         <AddedLayer visited={visited} />
         <LitLayer lit={lit} detail={detail} />
-        {!filtering && <RouteLayer records={records} />}
+        {!filtering && <RouteLayer records={records} track={track} />}
         <WishMarkers wishes={openWishes} />
         <PlaceMarkers
           places={places}

@@ -1,4 +1,12 @@
 import type { LatLng } from './photoMeta.ts'
+import {
+  guessBySpeed,
+  looksLikeFlight,
+  pathKm,
+  simplifyPath,
+  type TrackPoint,
+  type Transport,
+} from './track.ts'
 import { distanceM, SAME_PLACE_M } from './visits.ts'
 
 // 一次出行的路线（决策 0020 第 1、2 条）：有位置的记录按时间连起来。
@@ -60,4 +68,86 @@ export function arcPoints(from: LatLng, to: LatLng, steps = 24): LatLng[] {
 export function formatKm(km: number): string | null {
   if (km < 1) return null
   return `约 ${km < 10 ? km.toFixed(1) : Math.round(km).toLocaleString('zh-CN')} 公里`
+}
+
+// ---------- 有轨迹时（决策 0022 第 7 条） ----------
+
+// 一次出行里每两条记录之间的一段：有轨迹点就沿轨迹走、按速度猜交通方式；
+// 轨迹断了很远就按 Polarsteps 的规则判飞机；整次出行都没有轨迹时和 tripRoute 一样（只按距离画弧线）。
+// 用户改过的交通方式存在后一条记录上，以用户的为准
+export type PathSegment = {
+  recordId: string // 这一段终点的那条记录（交通方式存在它上面）
+  from: LatLng
+  to: LatLng
+  path: LatLng[]
+  km: number
+  transport: Transport | null
+  guessed: boolean
+  long: boolean
+}
+
+type Stop = {
+  id: string
+  takenAt: number
+  location: LatLng | null
+  transport?: Transport | null
+}
+
+export function tripPaths(
+  records: Stop[],
+  track: TrackPoint[],
+): { segments: PathSegment[]; km: number } {
+  const stops: (Stop & { location: LatLng })[] = []
+  for (const r of [...records].sort((a, b) => a.takenAt - b.takenAt)) {
+    if (!r.location) continue
+    const last = stops.at(-1)
+    if (last && distanceM(last.location, r.location) <= SAME_PLACE_M) continue
+    stops.push(r as Stop & { location: LatLng })
+  }
+  const hasTrack = track.length > 0
+  const segments = stops.slice(1).map((b, i): PathSegment => {
+    const a = stops[i]
+    const hours = Math.max(0, b.takenAt - a.takenAt) / 3_600_000
+    const between = track.filter((p) => p.t > a.takenAt && p.t < b.takenAt)
+    const user = b.transport ?? null
+    let seg: Omit<PathSegment, 'recordId'>
+    if (between.length >= 2) {
+      const path = simplifyPath([a.location, ...between, b.location])
+      const km = pathKm(path)
+      seg = {
+        from: a.location,
+        to: b.location,
+        path,
+        km,
+        transport: hours > 0 ? guessBySpeed(km / hours) : null,
+        guessed: true,
+        long: false,
+      }
+    } else {
+      const km = distanceM(a.location, b.location) / 1000
+      const flight = hasTrack && looksLikeFlight(km, hours)
+      const long = flight || km > LONG_SEGMENT_KM
+      seg = {
+        from: a.location,
+        to: b.location,
+        path: long
+          ? arcPoints(a.location, b.location)
+          : [a.location, b.location],
+        km,
+        transport: flight ? 'plane' : null,
+        guessed: true,
+        long,
+      }
+    }
+    if (user) {
+      seg.transport = user
+      seg.guessed = false
+      if (user === 'plane' && !seg.long) {
+        seg.long = true
+        seg.path = arcPoints(seg.from, seg.to)
+      }
+    }
+    return { ...seg, recordId: b.id }
+  })
+  return { segments, km: segments.reduce((n, s) => n + s.km, 0) }
 }

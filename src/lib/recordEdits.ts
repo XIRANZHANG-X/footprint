@@ -5,10 +5,15 @@ import type { TripBreak } from './trips.ts'
 
 // 用户在地图上点选地点（用于"待定位"的记录，也可以纠正 GPS 不准的记录）。
 // 地名查询失败不影响保存坐标。
-export async function setRecordLocation(recordId: string, location: LatLng) {
+// status 为 track：位置是按拍摄时间从轨迹里找到的（决策 0022 第 4 条）
+export async function setRecordLocation(
+  recordId: string,
+  location: LatLng,
+  status: 'manual' | 'track' = 'manual',
+) {
   await db.records.update(recordId, {
     location,
-    locationStatus: 'manual',
+    locationStatus: status,
     placeName: null,
     // 换了地方，城市要重新定（undefined 在 Dexie 里等于删掉这个字段）
     geoCity: undefined,
