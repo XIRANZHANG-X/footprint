@@ -23,7 +23,13 @@ android {
         versionCode appVersionCode
         versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // 本机语音识别的原生库只留手机用的两种 CPU，省掉模拟器用的 x86 那几十 MB（决策 0027）
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
         aaptOptions {
+            // 模型不压缩：压了也小不了多少，读的时候还要先解压
+            noCompress 'onnx'
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
@@ -64,6 +70,11 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    // 本机语音识别（决策 0027）：sherpa-onnx，由 scripts/prepare_asr.mjs 下载到 libs/，不进仓库；
+    // 没有这个文件时照常构建，只是没有本机识别
+    if (file('libs/sherpa-onnx.aar').exists()) {
+        implementation files('libs/sherpa-onnx.aar')
+    }
 }
 
 apply from: 'capacitor.build.gradle'

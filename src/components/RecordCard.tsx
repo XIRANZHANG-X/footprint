@@ -7,7 +7,12 @@ import {
   type RecordContent,
   type StoredPhoto,
 } from '../db.ts'
-import { chooseBody, enrichRecord, saveContent } from '../lib/enrich.ts'
+import {
+  cancelQueued,
+  chooseBody,
+  enrichRecord,
+  saveContent,
+} from '../lib/enrich.ts'
 import { changePhotos } from '../lib/importPhotos.ts'
 import {
   formatTimings,
@@ -569,6 +574,18 @@ export function RecordCard({
 
       <footer className="mt-4 flex flex-wrap items-center gap-2">
         {busy && <span className="px-tag bg-mint">AI 整理中…</span>}
+        {record.aiStatus === 'queued' && (
+          <>
+            <span className="px-tag bg-lemon">等联网后整理</span>
+            <button
+              type="button"
+              className="px-btn px-btn-sm"
+              onClick={() => void cancelQueued(record.id)}
+            >
+              不用整理了
+            </button>
+          </>
+        )}
         {record.aiStatus === 'error' && (
           <span className="w-full text-xs text-cherry">
             整理失败：{record.aiError}

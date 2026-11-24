@@ -227,3 +227,52 @@ export function chooseBody(
     if (record.aiDraft) await logEdit(recordId, record.aiDraft, next)
   })
 }
+
+// 离线时保存的记录（决策 0027 第 4 条）：先标成 queued，能连上服务端时按记录的时间先后整理
+export function queueEnrich(recordId: string, mode: DescribeMode) {
+  return db.records.update(recordId, {
+    aiStatus: 'queued',
+    aiQueued: mode,
+    aiError: null,
+  })
+}
+
+export function cancelQueued(recordId: string) {
+  return db.records.update(recordId, { aiStatus: 'none', aiQueued: undefined })
+}
+
+let draining: Promise<number> | null = null
+
+// 一条一条整理，不并发（手机上同时传几张大图很慢，也容易被限流）。
+// 整理中途又断网了：这条放回队列，剩下的等下次。返回整理了几条
+export function drainQueue(
+  run: (id: string, mode: DescribeMode) => Promise<void> = (id, mode) =>
+    enrichRecord(id, { mode }),
+  online: () => boolean = () => navigator.onLine,
+): Promise<number> {
+  draining ??= (async () => {
+    let done = 0
+    try {
+      for (;;) {
+        const next = (await db.records.orderBy('takenAt').toArray()).find(
+          (r) => r.aiStatus === 'queued',
+        )
+        if (!next) break
+        const mode = next.aiQueued ?? 'full'
+        await run(next.id, mode)
+        const after = await db.records.get(next.id)
+        if (after?.aiStatus === 'error' && !online()) {
+          await queueEnrich(next.id, mode)
+          break
+        }
+        if (after?.aiStatus === 'queued') break // run 没动它，避免死循环
+        await db.records.update(next.id, { aiQueued: undefined })
+        done++
+      }
+    } finally {
+      draining = null
+    }
+    return done
+  })()
+  return draining
+}

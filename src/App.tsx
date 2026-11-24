@@ -16,7 +16,7 @@ import {
   requestPersistence,
   saveErrorMessage,
 } from './lib/storage.ts'
-import { enrichRecord } from './lib/enrich.ts'
+import { drainQueue, enrichRecord, queueEnrich } from './lib/enrich.ts'
 import { clearDraft, loadDraft, saveDraft } from './lib/draft.ts'
 import {
   createTextRecord,
@@ -138,9 +138,22 @@ function App() {
   const [aiState, setAiState] = useState<AiState>('unavailable')
   const aiReady = aiState === 'ready'
 
+  // 网络恢复时重新看一次服务端（决策 0027 第 4 条：离线时排队的记录这时开始整理）
   useEffect(() => {
     void checkAi().then(setAiState)
+    const recheck = () => void checkAi().then(setAiState)
+    window.addEventListener('online', recheck)
+    return () => window.removeEventListener('online', recheck)
   }, [])
+  // 能连上了：把排队的记录一条条整理掉
+  const queuedCount = useLiveQuery(() =>
+    db.records.filter((r) => r.aiStatus === 'queued').count(),
+  )
+  useEffect(() => {
+    if (aiReady && queuedCount) void drainQueue().catch(() => {})
+  }, [aiReady, queuedCount])
+  // 暂时连不上、或者还没输口令：保存的记录先排队，之后自动整理
+  const canQueue = aiState === 'offline' || aiState === 'needsToken'
 
   // 当时的天气（决策 0025）：能连服务端时，在后台给记录补上
   useEffect(() => {
@@ -309,8 +322,9 @@ function App() {
       stopComposing()
       // 先存好再整理：AI 慢或失败都不会丢记录。
       // 直接保存：正文用自己写的，AI 只补标题、类别、标签；让 AI 整理：AI 另写一版（决策 0012）
-      if (recordId && aiReady)
-        void enrichRecord(recordId, { mode: body === 'own' ? 'meta' : 'full' })
+      const mode = body === 'own' ? 'meta' : 'full'
+      if (recordId && aiReady) void enrichRecord(recordId, { mode })
+      else if (recordId && canQueue) await queueEnrich(recordId, mode)
       // 有了第一批数据后申请持久化存储；浏览器拒绝也没关系，备份页可以再申请
       void requestPersistence()
     } catch (e) {
@@ -339,6 +353,7 @@ function App() {
             <Composer
               files={picked.files}
               aiReady={aiReady}
+              canQueue={canQueue}
               initialNote={picked.note}
               initialHere={picked.at?.location}
               onNoteChange={(note) => onNoteChange(picked.files, note)}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { transcribe } from '../lib/ai.ts'
+import { localAsrAvailable, transcribeAny } from '../lib/localAsr.ts'
 import {
   MAX_RECORD_SECONDS,
   startRecording,
@@ -25,6 +25,7 @@ type Phase = 'idle' | 'recording' | 'transcribing'
 export function Composer({
   files,
   aiReady,
+  canQueue = false,
   initialNote = '',
   initialHere,
   onNoteChange,
@@ -33,6 +34,8 @@ export function Composer({
 }: {
   files: File[] // 空数组表示"只写几句"，没有照片
   aiReady: boolean
+  // 暂时连不上服务端：仍然可以选"让 AI 整理"，先排队，能连上后自动整理（决策 0027 第 4 条）
+  canQueue?: boolean
   initialNote?: string // 从草稿继续时带回来的文字
   initialHere?: LatLng | null // 从停留提示补记时，位置已经知道（决策 0022 第 5 条）
   onNoteChange?: (note: string) => void // 用来自动存草稿
@@ -42,6 +45,11 @@ export function Composer({
   onCancel: () => void
 }) {
   const [here, setHere] = useState<LatLng | null>(initialHere ?? null)
+  // 安卓 App 里有本机语音模型时，没网也能说话（决策 0027）
+  const [localAsr, setLocalAsr] = useState(false)
+  useEffect(() => {
+    void localAsrAvailable().then(setLocalAsr)
+  }, [])
   const [locating, setLocating] = useState(false)
   const [note, setNoteState] = useState(initialNote)
   const [phase, setPhase] = useState<Phase>('idle')
@@ -76,7 +84,8 @@ export function Composer({
     if (!rec) return
     setPhase('transcribing')
     try {
-      const text = await transcribe(await rec.stop())
+      // 先用本机识别（决策 0027），不行再用云端
+      const { text } = await transcribeAny(await rec.stop(), aiReady)
       // 追加而不是覆盖：可以分几次说
       setNote((prev) => (prev ? `${prev}${text}` : text))
     } catch (e) {
@@ -139,7 +148,7 @@ export function Composer({
         </div>
       )}
 
-      {aiReady && (
+      {(aiReady || localAsr) && (
         <button
           type="button"
           onClick={() => void toggleRecord()}
@@ -206,10 +215,15 @@ export function Composer({
         </div>
       )}
       {error && <p className="mt-1 text-xs text-cherry">{error}</p>}
-      {!aiReady && (
+      {!aiReady && !canQueue && (
         <p className="mt-1 text-xs text-ink-soft">
           现在用不了 AI，这次只保存{textOnly ? '' : '照片和'}
           文字，之后可以再补。
+        </p>
+      )}
+      {!aiReady && canQueue && (
+        <p className="mt-1 text-xs text-ink-soft">
+          现在连不上服务端。先存在手机里，等能连上了自动整理。
         </p>
       )}
 
@@ -226,22 +240,22 @@ export function Composer({
           type="button"
           onClick={() => onDone(note, 'own', here)}
           disabled={!canSave}
-          className={`px-btn flex-1 ${aiReady ? '' : 'bg-berry'}`}
+          className={`px-btn flex-1 ${aiReady || canQueue ? '' : 'bg-berry'}`}
         >
           直接保存
         </button>
-        {aiReady && (
+        {(aiReady || canQueue) && (
           <button
             type="button"
             onClick={() => onDone(note, 'ai', here)}
             disabled={!canSave}
             className="px-btn flex-1 bg-berry"
           >
-            让 AI 整理
+            {aiReady ? '让 AI 整理' : '联网后让 AI 整理'}
           </button>
         )}
       </div>
-      {aiReady && (
+      {(aiReady || canQueue) && (
         <p className="mt-2 text-xs text-ink-soft">
           直接保存：正文用你写的，AI 只补标题和标签。让 AI 整理：AI
           另写一版，和你写的放在一起让你选。

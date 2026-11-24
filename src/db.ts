@@ -12,7 +12,8 @@ import type { LocationStatus } from './lib/record.ts'
 import type { TrackPoint, Transport } from './lib/track.ts'
 import type { TripBreak } from './lib/trips.ts'
 
-export type AiStatus = 'none' | 'pending' | 'done' | 'error'
+// queued：保存时连不上服务端，等能连上再整理（决策 0027 第 4 条）
+export type AiStatus = 'none' | 'queued' | 'pending' | 'done' | 'error'
 
 // 用户看到和编辑的正文
 export type RecordContent = Pick<
@@ -58,6 +59,8 @@ export type JournalRecord = {
   // AI 刚写完一版、而用户自己也写了内容时为 true：卡片上两版并排，等用户选一版（决策 0012 第 3 条）。
   // 不建索引的可选字段，旧记录里没有它，等同于 false
   choosing?: boolean
+  // aiStatus 为 queued 时，能连上后按哪种方式整理
+  aiQueued?: DescribeMode
   // 上次整理之后加过或删过照片：卡片上提示"要重新整理吗"，用户点了才整理（决策 0013 第 1 条）
   photosChanged?: boolean
   // 所在行政区，由坐标在本地边界数据里算出（决策 0014 第 3C 条）。undefined = 还没算；null = 不在任何区域里

@@ -48,3 +48,7 @@ blob-report
 
 # 提示词样例对比（决策 0019 第 8 条）：里面有自己的照片和原话
 evals
+
+# 本机语音识别（决策 0027）：sherpa-onnx 的安卓库和 SenseVoice 模型，由 scripts/prepare_asr.mjs 下载
+android/app/libs/sherpa-onnx.aar
+android/app/src/main/assets/sensevoice

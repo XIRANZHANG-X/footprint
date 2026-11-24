@@ -171,14 +171,16 @@ export function fetchBoundary(id: string) {
 
 // ready：可以用 AI；needsToken：服务端要求口令，但本机没有或不对；
 // unavailable：服务端连不上或没有配置百炼 key
-export type AiState = 'ready' | 'needsToken' | 'unavailable'
+// offline：连不上服务端（没网或服务端挂了），这时保存的记录排队等整理（决策 0027 第 4 条）；
+// unavailable：服务端在，但没配 AI
+export type AiState = 'ready' | 'needsToken' | 'offline' | 'unavailable'
 
 export async function checkAi(): Promise<AiState> {
   let health: { aiConfigured?: boolean; accessRequired?: boolean }
   try {
     health = (await (await fetch(`${API}/health`)).json()) as typeof health
   } catch {
-    return 'unavailable'
+    return 'offline'
   }
   if (!health.aiConfigured) return 'unavailable'
   if (!health.accessRequired) return 'ready'
@@ -191,7 +193,7 @@ export async function checkAi(): Promise<AiState> {
     }
     return r.ok ? 'ready' : 'unavailable'
   } catch {
-    return 'unavailable'
+    return 'offline'
   }
 }
 

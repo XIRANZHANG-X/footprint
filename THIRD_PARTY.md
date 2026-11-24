@@ -44,6 +44,17 @@
 
 - 当时的天气（决策 0025）：[Open-Meteo](https://open-meteo.com/)，数据协议 CC BY 4.0，经过本项目的服务端转发。
 
+## 本机语音识别（只在安卓 App 里，决策 0027）
+
+不进仓库，由 `npm run asr:assets`（`scripts/prepare_asr.mjs`）下载，放进 `android/app/libs/` 和 `android/app/src/main/assets/sensevoice/`。
+
+| 内容                          | 来源                                                                                                                     | 协议                                                                                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| sherpa-onnx 安卓库 2.0.3      | [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)                                                              | Apache-2.0                                                                                                                                  |
+| SenseVoice-Small（int8 量化） | 阿里巴巴通义实验室 [FunAudioLLM/SenseVoice](https://github.com/FunAudioLLM/SenseVoice)，sherpa-onnx 转换的 2024-07-17 版 | [FunASR 模型开源协议 1.1](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE)：可以使用、修改、分发，要注明来源和作者、保留模型名 |
+
+App 的"偏好 → 语音识别"里也写了模型名和出处。
+
 ## 主要代码依赖
 
 完整列表见 `package.json`，协议以各自包里的为准。打进网页的主要有：

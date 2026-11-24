@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { MAX_PREFERENCES_CHARS } from '../../shared/ai.ts'
 import { APP_VERSION } from '../appVersion.ts'
+import { AsrModeCard } from './AsrModeCard.tsx'
 import { PrivacyZonesCard } from './PrivacyZonesCard.tsx'
 import { db } from '../db.ts'
 import { changeRatio } from '../lib/editStats.ts'
@@ -235,6 +236,7 @@ export function PreferencesPanel() {
       </div>
 
       <AvoidWordsCard />
+      <AsrModeCard />
       <PrivacyZonesCard />
       <UsageCard />
       <p className="text-center text-xs text-ink-soft">

@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BackupSaverPlugin.class);
         registerPlugin(TrackerPlugin.class);
         registerPlugin(ShareInPlugin.class);
+        registerPlugin(LocalAsrPlugin.class);
         super.onCreate(savedInstanceState);
         // App 没开着时从相册分享进来：启动的那个 Intent 就带着照片（决策 0023）
         ShareInPlugin.receive(getIntent());

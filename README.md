@@ -62,6 +62,7 @@ npm run dev            # 同时启动前端（Vite）和 API 代理（Hono，:87
 需要 Android Studio（含 SDK）和 **JDK 21**（Android Studio 自带的 Java 25 对 Gradle 8.14 太新）。
 `android/local.properties` 里写本机 SDK 路径（`sdk.dir=C:/Users/<你>/AppData/Local/Android/Sdk`），这个文件不提交。
 
+- **本机语音识别**：`npm run app:sync` 会先跑 `npm run asr:assets`，下载 sherpa-onnx 安卓库（52 MB）和 SenseVoice 模型（解压后 239 MB），放进 `android/`（不提交）。安装包因此变大约 250 MB；不想要可以删掉 `android/app/libs/sherpa-onnx.aar` 和 `assets/sensevoice/`，App 会退回云端识别。
 - **调试版**：`npm run app:sync`，然后在 `android/` 下运行 `JAVA_HOME=<JDK 21 路径> ./gradlew assembleDebug`。
 - **正式版**（决策 0017）：
   1. 先用 `scripts/make_keystore.py` 生成签名密钥，只需一次，密钥放在仓库外。

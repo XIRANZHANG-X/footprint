@@ -16,6 +16,7 @@
     "dev:api": "tsx watch server/index.ts",
     "build": "tsc -b && vite build",
     "build:app": "tsc -b && vite build --mode app",
+    "preapp:sync": "npm run asr:assets",
     "app:sync": "npm run build:app && cap sync android",
     "app:open": "cap open android",
     "app:release": "npm run app:sync && android\\gradlew.bat -p android assembleRelease",
@@ -29,7 +30,8 @@
     "check": "tsc -b && npm run lint && npm test && npm run format:check",
     "lint": "oxlint",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "asr:assets": "node scripts/prepare_asr.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.0",
