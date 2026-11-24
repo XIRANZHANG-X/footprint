@@ -26,22 +26,26 @@ jobs:
 
       - run: npm ci
 
-      - name: 类型检查、代码检查、单元测试、格式
-        run: npm run check
-
-      # 构建前要下载约 50 MB 的模型和边界数据（scripts/prepare_assets.mjs），缓存起来，脚本不变就不再下载
+      # 约 50 MB 的模型和边界数据（scripts/prepare_assets.mjs）：构建要用，有的单元测试也读边界数据，
+      # 所以放在最前面。缓存起来，脚本不变就不再下载
       - name: 缓存下载的模型和边界数据
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache/assets
           key: assets-${{ hashFiles('scripts/prepare_assets.mjs') }}
+
+      - name: 准备模型和边界数据
+        run: npm run assets
+
+      - name: 类型检查、代码检查、单元测试、格式
+        run: npm run check
 
       - name: 构建
         run: npm run build
 
       - name: 缓存 Playwright 的浏览器
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ hashFiles('package-lock.json') }}
@@ -59,7 +63,7 @@ jobs:
 
       - name: 失败时上传测试记录
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: test-results
