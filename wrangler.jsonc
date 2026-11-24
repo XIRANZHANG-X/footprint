@@ -17,4 +17,20 @@
     "run_worker_first": ["/api/*"],
   },
   "observability": { "enabled": true },
+  // 按"IP + 接口"限流（决策 0018 第 3 条），代码在 server/app.ts 的 rateLimit。
+  // namespace_id 是自己定的数字，在同一个 Cloudflare 账号里不重复即可；period 只能是 10 或 60 秒
+  "ratelimits": [
+    // 花百炼额度的接口：整理、转写、偏好提炼、出行总结
+    {
+      "name": "AI_RATE_LIMIT",
+      "namespace_id": "1001",
+      "simple": { "limit": 20, "period": 60 },
+    },
+    // 不花钱的：口令验证、地名（Nominatim 被刷会封我们）
+    {
+      "name": "LIGHT_RATE_LIMIT",
+      "namespace_id": "1002",
+      "simple": { "limit": 30, "period": 60 },
+    },
+  ],
 }

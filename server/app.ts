@@ -141,13 +141,38 @@ export function createApp({ requireAccessToken }: AppOptions) {
       ? next()
       : c.json({ error: '服务端没有配置 DASHSCOPE_API_KEY' }, 503)
 
+  // 按"IP + 接口"限流（决策 0018 第 3 条）：口令泄露后挡住刷量，也挡住反复猜口令。
+  // 放在口令检查前面，猜错的请求也计数。Cloudflare 的计数是近似的、各机房分开算，挡得住刷量，挡不住慢慢地用；
+  // 最后一道防线是阿里云的费用预警
+  const rateLimit =
+    (
+      binding: 'AI_RATE_LIMIT' | 'LIGHT_RATE_LIMIT',
+    ): MiddlewareHandler<AppEnv> =>
+    async (c, next) => {
+      const limiter = c.env[binding]
+      if (!limiter) return next()
+      const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+      const { success } = await limiter.limit({ key: `${ip} ${c.req.path}` })
+      if (!success)
+        return c.json(
+          { error: '请求太频繁了，过一分钟再试', code: 'rate_limited' },
+          429,
+          { 'Retry-After': '60' },
+        )
+      return next()
+    }
+  // 花百炼额度的接口
+  const aiRate = rateLimit('AI_RATE_LIMIT')
+  // 不花钱的：口令验证、地名
+  const lightRate = rateLimit('LIGHT_RATE_LIMIT')
+
   // 音频上限 10MB（百炼的 Base64 限制），4 张 768px 的图远小于这个值
   const limit = bodyLimit({ maxSize: 12 * 1024 * 1024 })
 
   // 让前端验证用户输入的口令是否正确，不消耗 AI 额度
-  app.get('/auth/check', checkAccess, (c) => c.json({ ok: true }))
+  app.get('/auth/check', lightRate, checkAccess, (c) => c.json({ ok: true }))
 
-  app.post('/transcribe', checkAccess, limit, requireKey, async (c) => {
+  app.post('/transcribe', aiRate, checkAccess, limit, requireKey, async (c) => {
     const parsed = transcribeRequest.safeParse(await c.req.json())
     if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
     const config = dashscopeConfig(c.env)
@@ -167,7 +192,7 @@ export function createApp({ requireAccessToken }: AppOptions) {
     return c.json({ text: text.trim() }, 200, usageHeader([usage]))
   })
 
-  app.post('/describe', checkAccess, limit, requireKey, async (c) => {
+  app.post('/describe', aiRate, checkAccess, limit, requireKey, async (c) => {
     const parsed = describeRequest.safeParse(await c.req.json())
     if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
     const req = parsed.data
@@ -236,6 +261,7 @@ export function createApp({ requireAccessToken }: AppOptions) {
   // 根据最近的修改提出一版新的偏好说明。只处理文字，没有照片
   app.post(
     '/preferences/suggest',
+    aiRate,
     checkAccess,
     limit,
     requireKey,
@@ -264,7 +290,7 @@ export function createApp({ requireAccessToken }: AppOptions) {
   )
 
   // 一次出行的总结（决策 0014 第 3E 条）。只处理文字，没有照片
-  app.post('/summarize', checkAccess, limit, requireKey, async (c) => {
+  app.post('/summarize', aiRate, checkAccess, limit, requireKey, async (c) => {
     const parsed = summarizeRequest.safeParse(await c.req.json())
     if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
     const config = dashscopeConfig(c.env)
@@ -284,7 +310,7 @@ export function createApp({ requireAccessToken }: AppOptions) {
   })
 
   // 地名接口不花百炼额度，但被滥用会让 Nominatim 封掉我们，所以同样要口令
-  app.get('/geocode', checkAccess, async (c) => {
+  app.get('/geocode', lightRate, checkAccess, async (c) => {
     const lat = Number(c.req.query('lat'))
     const lng = Number(c.req.query('lng'))
     if (!Number.isFinite(lat) || !Number.isFinite(lng))
@@ -293,7 +319,7 @@ export function createApp({ requireAccessToken }: AppOptions) {
   })
 
   // 按地名查坐标，列出候选让用户选（决策 0013 第 3 条）。同样走 Nominatim，同样要口令
-  app.get('/geocode/search', checkAccess, async (c) => {
+  app.get('/geocode/search', lightRate, checkAccess, async (c) => {
     const q = (c.req.query('q') ?? '').trim()
     if (!q || q.length > MAX_PLACE_QUERY_CHARS)
       return c.json({ error: '地名不能为空，也不能太长' }, 400)

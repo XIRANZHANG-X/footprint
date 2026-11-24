@@ -150,3 +150,56 @@ describe('CORS for the Android app', () => {
     expect(res.status).toBe(401)
   })
 })
+
+describe('rate limiting', () => {
+  // 假的限流绑定：前 n 次放行，之后拒绝；记下每次用的 key
+  function fakeLimiter(n: number) {
+    const keys: string[] = []
+    return {
+      keys,
+      limit: async ({ key }: { key: string }) => {
+        keys.push(key)
+        return { success: keys.length <= n }
+      },
+    }
+  }
+
+  it('counts per IP and route, before the token check, and answers 429', async () => {
+    const light = fakeLimiter(1)
+    const env: Env = { ACCESS_TOKEN: TOKEN, LIGHT_RATE_LIMIT: light }
+    const check = () =>
+      worker.request(
+        '/api/auth/check',
+        { headers: { 'CF-Connecting-IP': '203.0.113.7' } },
+        env,
+      )
+    // 第一次没带口令：被口令拦下，但已经计数
+    expect((await check()).status).toBe(401)
+    const res = await check()
+    expect(res.status).toBe(429)
+    expect(res.headers.get('Retry-After')).toBe('60')
+    expect(await res.json()).toMatchObject({ code: 'rate_limited' })
+    expect(light.keys).toEqual([
+      '203.0.113.7 /api/auth/check',
+      '203.0.113.7 /api/auth/check',
+    ])
+  })
+
+  it('uses the AI limiter for paid routes, not the light one', async () => {
+    const ai = fakeLimiter(0)
+    const light = fakeLimiter(100)
+    const res = await worker.request(
+      '/api/summarize',
+      { method: 'POST' },
+      { ACCESS_TOKEN: TOKEN, AI_RATE_LIMIT: ai, LIGHT_RATE_LIMIT: light },
+    )
+    expect(res.status).toBe(429)
+    expect(ai.keys).toEqual(['unknown /api/summarize'])
+    expect(light.keys).toEqual([])
+  })
+
+  it('does not limit when no binding is configured (local Node)', async () => {
+    const res = await local.request('/api/auth/check', {}, {})
+    expect(res.status).toBe(200)
+  })
+})
