@@ -70,11 +70,15 @@ public class TrackerPlugin extends Plugin {
             call.reject("开始记录失败：" + e.getMessage());
             return;
         }
-        call.resolve(status());
+        // 服务是异步建起来的，这时还没活：不做"被杀"检查，直接报正在记
+        JSObject ret = status(false);
+        ret.put("running", true);
+        call.resolve(ret);
     }
 
     @PluginMethod
     public void stop(PluginCall call) {
+        TrackerService.prefs(getContext()).edit().putBoolean("stopRequested", true).commit();
         getContext().stopService(new Intent(getContext(), TrackerService.class));
         TrackerService.prefs(getContext()).edit().putBoolean("running", false).apply();
         call.resolve(status());
@@ -86,9 +90,20 @@ public class TrackerPlugin extends Plugin {
     }
 
     private JSObject status() {
+        return status(true);
+    }
+
+    private JSObject status(boolean checkAlive) {
         SharedPreferences p = TrackerService.prefs(getContext());
+        // 记着"在记录"，服务却不在这个进程里：被系统杀过（决策 0030）。记一条 lost，状态改成没在记
+        if (checkAlive && p.getBoolean("running", false) && !TrackerService.alive) {
+            TrackHealth.event(getContext(), "lost", p.getBoolean("precise", false));
+            TrackHealth.cancel(getContext());
+            p.edit().putBoolean("running", false).apply();
+        }
         JSObject ret = new JSObject();
         ret.put("running", p.getBoolean("running", false));
+        ret.put("brand", Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase());
         ret.put("precise", p.getBoolean("precise", false));
         ret.put("startedAt", p.getLong("startedAt", 0));
         ret.put("pending", TrackFile.count(getContext()));

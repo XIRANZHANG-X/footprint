@@ -106,6 +106,18 @@ export type Embedding = { recordId: string; hash: string; vector: Float32Array }
 // 零散的设置（偏好说明、出行总结等），一个键一行
 export type Setting = { key: string; value: unknown }
 
+// 记录体检的事件（决策 0030）：开始、心跳、停止、被系统停了。只在这台设备，不同步、不进备份
+export type TrackEvent = {
+  id?: number
+  t: number
+  ev: 'start' | 'hb' | 'stop' | 'lost'
+  bat: number // 电量百分比，读不到是 -1
+  chg: boolean // 在充电
+  scr?: boolean // 屏幕亮着（锁屏期间的耗电才大致是后台记录的消耗）
+  precise: boolean
+  prov: string // "gps:on,network:none" 这样：定位来源有没有、开没开
+}
+
 // 删除标记（决策 0029 第 3c 条）：同步时让别的设备也删掉。key = "表名/编号"
 export type Tombstone = { key: string; table: string; id: string; at: number }
 
@@ -216,6 +228,7 @@ export const db = new Dexie('footprint-journal') as Dexie & {
   plans: EntityTable<Plan, 'id'>
   shares: EntityTable<ShareLink, 'id'>
   tombstones: EntityTable<Tombstone, 'key'>
+  trackEvents: EntityTable<TrackEvent, 'id'>
 }
 
 db.version(1).stores({
@@ -376,6 +389,24 @@ db.version(12).stores({
   plans: 'id, start',
   shares: 'id, tripId',
   tombstones: 'key, at',
+})
+
+// v13（决策 0030）：记录体检的事件
+db.version(13).stores({
+  records: 'id, takenAt',
+  photos: 'id, recordId',
+  edits: 'id, recordId, at',
+  settings: 'key',
+  drafts: 'id',
+  embeddings: 'recordId',
+  aiCalls: 'id, at',
+  wishes: 'id, addedAt',
+  visited: 'id',
+  track: '++id, t',
+  plans: 'id, start',
+  shares: 'id, tripId',
+  tombstones: 'key, at',
+  trackEvents: '++id, t',
 })
 
 // 参与同步的表（轨迹另算：按时间合并）。写入时由钩子统一加修改时间 _mt，删除时记删除标记，

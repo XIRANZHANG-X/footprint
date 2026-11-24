@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { db } from '../db.ts'
 import { inNativeApp } from '../lib/reminder.ts'
+import { TrackHealthPanel } from './TrackHealthPanel.tsx'
 
 // 记录路线（决策 0022）：在地图页顶部。安卓 App 里可以开始、停止，选省电或精确；
 // 网页版做不了后台定位，只能导入别的 App 的轨迹（GPX）。点只存在手机里
@@ -13,7 +14,12 @@ const timeFmt = new Intl.DateTimeFormat('zh-CN', {
   minute: '2-digit',
 })
 
-type Status = { running: boolean; precise: boolean; startedAt: number }
+type Status = {
+  running: boolean
+  precise: boolean
+  startedAt: number
+  brand?: string
+}
 
 export function TrackerCard() {
   const native = inNativeApp()
@@ -52,6 +58,14 @@ export function TrackerCard() {
     } finally {
       setBusy(false)
     }
+  }
+
+  function openBatterySettings() {
+    void import('../lib/trackSync.ts').then((m) =>
+      m.Tracker.openBatterySettings().catch((e: unknown) =>
+        setMessage(e instanceof Error ? e.message : String(e)),
+      ),
+    )
   }
 
   async function onGpx(e: ChangeEvent<HTMLInputElement>) {
@@ -122,16 +136,15 @@ export function TrackerCard() {
           <button
             type="button"
             className="mt-2 text-xs text-ink-soft underline decoration-dashed"
-            onClick={() =>
-              void import('../lib/trackSync.ts').then((m) =>
-                m.Tracker.openBatterySettings().catch((e: unknown) =>
-                  setMessage(e instanceof Error ? e.message : String(e)),
-                ),
-              )
-            }
+            onClick={openBatterySettings}
           >
             锁屏后不记了？去设置里允许足迹手账在后台运行
           </button>
+          <TrackHealthPanel
+            running={status?.running ?? false}
+            brand={status?.brand ?? ''}
+            onOpenSettings={openBatterySettings}
+          />
         </>
       ) : (
         <p className="mt-1 text-xs text-ink-soft">

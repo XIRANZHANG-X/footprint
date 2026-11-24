@@ -1,5 +1,5 @@
 import { registerPlugin } from '@capacitor/core'
-import { db } from '../db.ts'
+import { db, type TrackEvent } from '../db.ts'
 import type { LatLng } from './photoMeta.ts'
 import { setRecordLocation } from './recordEdits.ts'
 import { inNativeApp } from './reminder.ts'
@@ -22,13 +22,18 @@ export type TrackerStatus = {
   precise: boolean
   startedAt: number
   pending: number
+  brand?: string // 手机厂商（小写），体检里按品牌给设置路径（决策 0030）
 }
 export const Tracker = registerPlugin<{
   start(o: { precise: boolean }): Promise<TrackerStatus>
   stop(): Promise<TrackerStatus>
   getStatus(): Promise<TrackerStatus>
+  // 暂存文件里有两种行：轨迹点，和记录体检的事件（有 ev 字段，决策 0030）
   drain(): Promise<{
-    points: { t: number; lat: number; lng: number; acc: number; p: string }[]
+    points: (
+      | { t: number; lat: number; lng: number; acc: number; p: string }
+      | Omit<TrackEvent, 'id'>
+    )[]
   }>
   openBatterySettings(): Promise<void>
 }>('Tracker')
@@ -67,7 +72,13 @@ export function syncNativeTrack(): Promise<number> {
   if (!inNativeApp()) return Promise.resolve(0)
   syncing ??= (async () => {
     try {
-      const { points } = await Tracker.drain()
+      const { points: lines } = await Tracker.drain()
+      const events = lines.filter((l): l is Omit<TrackEvent, 'id'> => 'ev' in l)
+      if (events.length) await db.trackEvents.bulkAdd(events)
+      const points = lines.filter(
+        (l): l is Exclude<(typeof lines)[number], Omit<TrackEvent, 'id'>> =>
+          !('ev' in l),
+      )
       const added = await savePoints(
         points.map((p) => ({
           t: p.t,

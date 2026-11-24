@@ -34,6 +34,16 @@ public class TrackerService extends Service implements LocationListener {
     private static final float MAX_ACCURACY_M = 200f;
 
     private LocationManager manager;
+    // 服务在这个进程里活着没有（决策 0030）：进程被杀后重新起来时是 false，体检靠它发现"被系统停了"
+    static volatile boolean alive = false;
+    private long lastBeat = 0;
+    private boolean precise = false;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        alive = true;
+    }
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -42,14 +52,19 @@ public class TrackerService extends Service implements LocationListener {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        boolean precise = intent != null && intent.getBooleanExtra(EXTRA_PRECISE, false);
+        precise = intent != null && intent.getBooleanExtra(EXTRA_PRECISE, false);
         startInForeground(precise);
         startUpdates(precise);
         prefs(this).edit()
                 .putBoolean("running", true)
+                .putBoolean("stopRequested", false)
                 .putBoolean("precise", precise)
                 .putLong("startedAt", System.currentTimeMillis())
                 .apply();
+        // 记录体检：开始时记一条，之后每 15 分钟一条心跳
+        TrackHealth.event(this, "start", precise);
+        lastBeat = System.currentTimeMillis();
+        TrackHealth.scheduleNext(this);
         // 被系统杀掉后不要自己重启：重启时 App 不在前台，拿不到定位权限
         return START_NOT_STICKY;
     }
@@ -106,6 +121,12 @@ public class TrackerService extends Service implements LocationListener {
                 l.hasAccuracy() ? l.getAccuracy() : -1f,
                 l.getProvider() == null ? "" : l.getProvider());
         TrackFile.append(this, line);
+        // 动起来时点很多，心跳顺带补上（闹钟被系统推迟时也不至于看起来像断档）
+        long now = System.currentTimeMillis();
+        if (now - lastBeat >= TrackHealth.INTERVAL_MS) {
+            TrackHealth.event(this, "hb", precise);
+            lastBeat = now;
+        }
     }
 
     // 旧版安卓要求实现这几个方法
@@ -121,7 +142,12 @@ public class TrackerService extends Service implements LocationListener {
     @Override
     public void onDestroy() {
         if (manager != null) manager.removeUpdates(this);
-        prefs(this).edit().putBoolean("running", false).apply();
+        alive = false;
+        TrackHealth.cancel(this);
+        // 用户点了停止是 stop；没点却被销毁（系统回收）是 lost
+        SharedPreferences p = prefs(this);
+        TrackHealth.event(this, p.getBoolean("stopRequested", false) ? "stop" : "lost", precise);
+        p.edit().putBoolean("running", false).apply();
         super.onDestroy();
     }
 

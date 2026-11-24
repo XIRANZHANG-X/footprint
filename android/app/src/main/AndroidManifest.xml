@@ -42,6 +42,11 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- 记录体检的闹钟（决策 0030）：每 15 分钟一条心跳，发现服务被系统停了就提示 -->
+        <receiver
+            android:name=".HeartbeatReceiver"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
