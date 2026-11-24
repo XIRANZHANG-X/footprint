@@ -38,7 +38,8 @@ export async function exportBackup(
     now,
     {
       edits,
-      settings,
+      // 网盘账号、应用密码和同步口令不进备份（决策 0029 第 3a 条）：备份文件没有加密
+      settings: settings.filter((x) => !x.key.startsWith('sync')),
       aiCalls,
       wishes,
       visited,

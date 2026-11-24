@@ -11,6 +11,8 @@ import {
 } from '../lib/review.ts'
 import { C, renderDocument, type DocBlock } from '../lib/shareImage.ts'
 import { ShareSheet, type ShareOption } from './SharePreview.tsx'
+import { YearStoryCard } from './YearStoryCard.tsx'
+import { yearKey, type YearStory } from '../lib/yearStory.ts'
 
 // 回顾页（决策 0014 第 3E 条）：按月、按年看去了哪些地方。打开这一页时才计算
 
@@ -51,7 +53,11 @@ function Stat({ value, label }: { value: number; label: string }) {
   )
 }
 
-async function reviewImage(p: Period, r: Review): Promise<Blob[]> {
+async function reviewImage(
+  p: Period,
+  r: Review,
+  story: string | null,
+): Promise<Blob[]> {
   const covers: Blob[] = []
   for (const rec of r.records) {
     if (covers.length >= 9) break
@@ -70,6 +76,8 @@ async function reviewImage(p: Period, r: Review): Promise<Blob[]> {
       ],
     },
     { kind: 'photoGrid', blobs: covers },
+    // 年度回顾的文字（决策 0029 第 2 条）
+    ...(story ? ([{ kind: 'text', text: story }] as DocBlock[]) : []),
     ...(r.cities.length
       ? ([
           { kind: 'heading', text: '去过的城市' },
@@ -178,6 +186,10 @@ export function ReviewPanel({
             <Stat value={review.firsts.length} label="第一次" />
           </div>
 
+          {period.kind === 'year' && (
+            <YearStoryCard year={period.year} records={records} />
+          )}
+
           {review.cities.length > 0 && (
             <div>
               <h3 className="font-pixel text-[12px] text-ink-soft">
@@ -235,7 +247,16 @@ export function ReviewPanel({
                 {
                   key: 'long',
                   label: '长图',
-                  render: () => reviewImage(period, review),
+                  render: async () => {
+                    const story =
+                      period.kind === 'year'
+                        ? ((
+                            (await db.settings.get(yearKey(period.year)))
+                              ?.value as YearStory | undefined
+                          )?.text ?? null)
+                        : null
+                    return reviewImage(period, review, story)
+                  },
                 },
               ])
             }

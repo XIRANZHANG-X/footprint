@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { MAX_PREFERENCES_CHARS } from '../../shared/ai.ts'
 import { APP_VERSION } from '../appVersion.ts'
 import { AsrModeCard } from './AsrModeCard.tsx'
+import { DashboardCard } from './DashboardCard.tsx'
 import { PrivacyZonesCard } from './PrivacyZonesCard.tsx'
 import { db } from '../db.ts'
 import { changeRatio } from '../lib/editStats.ts'
@@ -239,6 +240,7 @@ export function PreferencesPanel() {
       <AsrModeCard />
       <PrivacyZonesCard />
       <UsageCard />
+      <DashboardCard />
       <p className="text-center text-xs text-ink-soft">
         足迹手账 v{APP_VERSION}
       </p>

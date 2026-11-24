@@ -166,8 +166,11 @@ export async function deleteRecord(
 }
 
 export async function restoreRecord({ record, photos }: DeletedRecord) {
+  // 删除时留下了删除标记（决策 0029 第 3c 条）；恢复的这一份要比标记新，同步时才不会又被删掉。
+  // 加 1 毫秒：标记和恢复可能落在同一毫秒，而一样时标记为准
+  const _mt = Date.now() + 1
   await db.transaction('rw', db.records, db.photos, async () => {
-    await db.photos.bulkPut(photos)
-    await db.records.put(record)
+    await db.photos.bulkPut(photos.map((p) => ({ ...p, _mt })))
+    await db.records.put({ ...record, _mt })
   })
 }

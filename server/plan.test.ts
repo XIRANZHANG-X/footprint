@@ -101,3 +101,59 @@ describe('plan prompt', () => {
     )
   })
 })
+
+// 决策 0029 第 2 条：年度回顾。月度小结用 /summarize 的 month 口径，年度只收小结和统计
+describe('year story', () => {
+  it('writes a month summary with the month prompt', async () => {
+    const calls = fakeModel('三月我去了杭州。')
+    const res = await app.request(
+      '/api/summarize',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scope: 'month',
+          items: [{ date: '3月2日', title: '面', place: '奎元馆', body: '' }],
+        }),
+      },
+      ENV,
+    )
+    expect(res.status).toBe(200)
+    const sys = (calls[0] as { messages: { content: string }[] }).messages[0]
+    expect(sys.content).toContain('某一个月')
+  })
+
+  it('writes the year from month summaries and facts', async () => {
+    const calls = fakeModel('这一年我去了两个城市。')
+    const res = await app.request(
+      '/api/summarize/year',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          year: 2025,
+          months: [
+            { month: 3, text: '三月在杭州吃面。' },
+            { month: 7, text: '七月看展。' },
+          ],
+          facts: '3 条记录，出门 3 天',
+        }),
+      },
+      ENV,
+    )
+    expect(await res.json()).toEqual({ text: '这一年我去了两个城市。' })
+    const sent = calls[0] as { messages: { content: string }[] }
+    expect(sent.messages[0].content).toContain('数字照抄统计')
+    expect(sent.messages[1].content).toContain('7 月：七月看展。')
+    const bad = await app.request(
+      '/api/summarize/year',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: 2025, months: [], facts: '' }),
+      },
+      ENV,
+    )
+    expect(bad.status).toBe(400)
+  })
+})

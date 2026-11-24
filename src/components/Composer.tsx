@@ -41,10 +41,18 @@ export function Composer({
   onNoteChange?: (note: string) => void // 用来自动存草稿
   // own：直接保存，正文用自己写的；ai：让 AI 写一版（决策 0012 第 3 条）
   // location：只写几句时用户点"用当前位置"取到的坐标，没点就是 null
-  onDone: (note: string, body: 'own' | 'ai', location: LatLng | null) => void
+  // via：文字里有没有用语音说的部分（使用看板用，决策 0029 第 1 条）
+  onDone: (
+    note: string,
+    body: 'own' | 'ai',
+    location: LatLng | null,
+    via: 'voice' | 'text',
+  ) => void
   onCancel: () => void
 }) {
   const [here, setHere] = useState<LatLng | null>(initialHere ?? null)
+  const [voiced, setVoiced] = useState(false)
+  const via = voiced ? 'voice' : 'text'
   // 安卓 App 里有本机语音模型时，没网也能说话（决策 0027）
   const [localAsr, setLocalAsr] = useState(false)
   useEffect(() => {
@@ -88,6 +96,7 @@ export function Composer({
       const { text } = await transcribeAny(await rec.stop(), aiReady)
       // 追加而不是覆盖：可以分几次说
       setNote((prev) => (prev ? `${prev}${text}` : text))
+      if (text.trim()) setVoiced(true)
     } catch (e) {
       setError(
         `语音识别失败：${e instanceof Error ? e.message : e}。可以直接打字。`,
@@ -238,7 +247,7 @@ export function Composer({
         </button>
         <button
           type="button"
-          onClick={() => onDone(note, 'own', here)}
+          onClick={() => onDone(note, 'own', here, via)}
           disabled={!canSave}
           className={`px-btn flex-1 ${aiReady || canQueue ? '' : 'bg-berry'}`}
         >
@@ -247,7 +256,7 @@ export function Composer({
         {(aiReady || canQueue) && (
           <button
             type="button"
-            onClick={() => onDone(note, 'ai', here)}
+            onClick={() => onDone(note, 'ai', here, via)}
             disabled={!canSave}
             className="px-btn flex-1 bg-berry"
           >

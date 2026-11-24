@@ -16,6 +16,7 @@ import {
   MAX_PREFERENCES_CHARS,
   suggestRequest,
   summarizeRequest,
+  yearStoryRequest,
   transcribeRequest,
   type AiUsage,
   type Description,
@@ -51,6 +52,8 @@ import {
   PLAN_SYSTEM,
   planUserText,
   agentSystem,
+  yearSystem,
+  yearUserText,
 } from './prompts.ts'
 
 type AppEnv = { Bindings: Env }
@@ -314,7 +317,10 @@ export function createApp({ requireAccessToken }: AppOptions) {
       model: config.textModel,
       ...THINKING_OFF,
       messages: [
-        { role: 'system', content: summarySystem(parsed.data.preferences) },
+        {
+          role: 'system',
+          content: summarySystem(parsed.data.preferences, parsed.data.scope),
+        },
         { role: 'user', content: summaryUserText(parsed.data) },
       ],
     })
@@ -324,6 +330,35 @@ export function createApp({ requireAccessToken }: AppOptions) {
       usageHeader([usage]),
     )
   })
+
+  // 年度回顾（决策 0029 第 2 条）：分层总结的最后一步，只收每个月的小结和本机统计
+  app.post(
+    '/summarize/year',
+    aiRate,
+    checkAccess,
+    limit,
+    requireKey,
+    async (c) => {
+      const parsed = yearStoryRequest.safeParse(
+        await c.req.json().catch(() => null),
+      )
+      if (!parsed.success) return c.json({ error: '请求格式不对' }, 400)
+      const config = dashscopeConfig(c.env)
+      const { text, usage } = await chat(config, {
+        model: config.textModel,
+        ...THINKING_OFF,
+        messages: [
+          { role: 'system', content: yearSystem(parsed.data.preferences) },
+          { role: 'user', content: yearUserText(parsed.data) },
+        ],
+      })
+      return c.json(
+        { text: text.trim().slice(0, 1200) },
+        200,
+        usageHeader([usage]),
+      )
+    },
+  )
 
   // AI 帮我排行程（决策 0024 第 4 条）：只发文字，文字模型按严格格式输出；地点由 App 逐个搜索核实
   app.post('/plan', aiRate, checkAccess, limit, requireKey, async (c) => {

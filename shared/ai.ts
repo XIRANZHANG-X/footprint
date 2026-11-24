@@ -190,9 +190,28 @@ export const summaryItem = z.object({
 export const summarizeRequest = z.object({
   items: z.array(summaryItem).min(1).max(MAX_SUMMARY_ITEMS),
   preferences: z.string().max(MAX_PREFERENCES_CHARS).optional(),
+  // trip：一次出行的总结；month：年度报告里一个月的总结（决策 0029 第 2 条）
+  scope: z.enum(['trip', 'month']).default('trip'),
 })
 export type SummarizeRequest = z.input<typeof summarizeRequest>
 export const summarizeResponse = z.object({ text: z.string() })
+
+// 年度报告的最后一步（决策 0029 第 2 条）：只发每个月的总结和本机算好的统计，不发记录原文
+export const yearStoryRequest = z.object({
+  year: z.number().int().min(2000).max(2100),
+  months: z
+    .array(
+      z.object({
+        month: z.number().int().min(1).max(12),
+        text: z.string().max(800),
+      }),
+    )
+    .min(1)
+    .max(12),
+  facts: z.string().max(1500),
+  preferences: z.string().max(MAX_PREFERENCES_CHARS).optional(),
+})
+export type YearStoryRequest = z.input<typeof yearStoryRequest>
 
 // ---------- AI 帮我排行程（决策 0024 第 4 条） ----------
 // 只发文字：目的地、天数、补充的一句话、常记的类别和标签、在目的地去过的地方、想去清单。不发照片和正文

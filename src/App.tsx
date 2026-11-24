@@ -16,6 +16,7 @@ import {
   requestPersistence,
   saveErrorMessage,
 } from './lib/storage.ts'
+import { recordOpen } from './lib/dashboard.ts'
 import { drainQueue, enrichRecord, queueEnrich } from './lib/enrich.ts'
 import { clearDraft, loadDraft, saveDraft } from './lib/draft.ts'
 import {
@@ -140,6 +141,7 @@ function App() {
 
   // 网络恢复时重新看一次服务端（决策 0027 第 4 条：离线时排队的记录这时开始整理）
   useEffect(() => {
+    void recordOpen().catch(() => {})
     void checkAi().then(setAiState)
     const recheck = () => void checkAi().then(setAiState)
     window.addEventListener('online', recheck)
@@ -301,6 +303,7 @@ function App() {
     note: string,
     body: 'own' | 'ai',
     location: LatLng | null,
+    via: 'voice' | 'text' = 'text',
   ) {
     if (!picked) return
     setBusy(true)
@@ -319,6 +322,7 @@ function App() {
           parts.push(`${r.failed.length} 张无法处理：${r.failed.join('、')}`)
         setMessage(parts.join('；'))
       }
+      if (recordId) await db.records.update(recordId, { noteVia: via })
       stopComposing()
       // 先存好再整理：AI 慢或失败都不会丢记录。
       // 直接保存：正文用自己写的，AI 只补标题、类别、标签；让 AI 整理：AI 另写一版（决策 0012）
@@ -357,8 +361,8 @@ function App() {
               initialNote={picked.note}
               initialHere={picked.at?.location}
               onNoteChange={(note) => onNoteChange(picked.files, note)}
-              onDone={(note, body, location) =>
-                void onDone(note, body, location)
+              onDone={(note, body, location, via) =>
+                void onDone(note, body, location, via)
               }
               onCancel={stopComposing}
             />

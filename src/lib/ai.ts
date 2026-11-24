@@ -16,6 +16,7 @@ import {
   type Geocode,
   type StyleExample,
   type SummarizeRequest,
+  type YearStoryRequest,
 } from '../../shared/ai.ts'
 import { z } from 'zod'
 import { db } from '../db.ts'
@@ -43,6 +44,7 @@ const AI_KINDS: Record<string, AiCallKind> = {
   '/describe': 'describe',
   '/preferences/suggest': 'suggest',
   '/summarize': 'summarize',
+  '/summarize/year': 'summarize',
   '/plan': 'plan',
   '/agent': 'agent',
 }
@@ -134,6 +136,11 @@ export async function suggestPreferences(
 // 一次出行的总结（决策 0014 第 3E 条），只发文字
 export async function summarize(req: SummarizeRequest) {
   return (await call('/summarize', summarizeResponse, postJson(req))).text
+}
+
+// 年度回顾的最后一步（决策 0029 第 2 条）
+export async function summarizeYear(req: YearStoryRequest) {
+  return (await call('/summarize/year', summarizeResponse, postJson(req))).text
 }
 
 export function geocode(lat: number, lng: number) {

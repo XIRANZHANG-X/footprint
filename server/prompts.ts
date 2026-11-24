@@ -5,6 +5,7 @@ import {
   type StyleExample,
   type SummarizeRequest,
   type PlanRequest,
+  type YearStoryRequest,
 } from '../shared/ai.ts'
 
 const COMMON_FIELDS = `- title：不超过 16 个字的标题，尽量用用户原话里的词，不要套话，不要感叹号
@@ -95,10 +96,48 @@ export function summaryUserText(req: SummarizeRequest): string {
     .join('\n\n')
 }
 
-export function summarySystem(preferences?: string) {
+const MONTH_SYSTEM = `你在帮一位用户给他某一个月的足迹写一段小结，之后会用来写他的年度回顾。
+我会按时间顺序给你这个月的每条记录（日期、标题、地点、正文）。要求：
+- 用第一人称"我"，60~150 字，一段话
+- 语气平实，不要写成文案，不要感叹号
+- 只写记录里出现过的地方和事；记录多时挑最有代表性的，不要逐条罗列；不要添加记录里没有的感受、评价和事实
+- "地点"是店名或地名，照原样写，不要按字面意思理解（比如"外婆家"可能是一家餐厅）
+- 不要写总结性、抒情的句子（比如"开启了新的一天"）
+- 只输出小结本身，不要标题，不要解释`
+
+const YEAR_SYSTEM = `你在帮一位用户写他这一年的足迹回顾，放在他私人足迹手账的年度页里。
+我会给你他每个月的小结，以及本机算好的统计（数字都是准的）。要求：
+- 用第一人称"我"，200~350 字，两三段
+- 语气平实，像年底自己翻手账时写下的，不要写成文案，不要感叹号
+- 只用小结和统计里有的内容，数字照抄统计里对应名称的那一项，不要自己算，也不要把"记录条数""出行次数"这些混用；不要添加没有的感受、评价和事实
+- 按时间串起来，点出这一年去得最多的地方和第一次去的地方
+- 不要写总结性、抒情的结尾（比如"回归生活""充满收获"）
+- 只输出回顾本身，不要标题，不要解释`
+
+function withPreferences(base: string, preferences?: string) {
   return preferences?.trim()
-    ? `${SUMMARY_SYSTEM}\n\n这位用户对写法有自己的要求，和上面的要求冲突时以这里为准：\n${preferences.trim()}`
-    : SUMMARY_SYSTEM
+    ? `${base}\n\n这位用户对写法有自己的要求，和上面的要求冲突时以这里为准：\n${preferences.trim()}`
+    : base
+}
+
+// scope：trip 是一次出行的总结；month 是年度报告里一个月的小结（决策 0029 第 2 条）
+export function summarySystem(preferences?: string, scope = 'trip') {
+  return withPreferences(
+    scope === 'month' ? MONTH_SYSTEM : SUMMARY_SYSTEM,
+    preferences,
+  )
+}
+
+export function yearSystem(preferences?: string) {
+  return withPreferences(YEAR_SYSTEM, preferences)
+}
+
+export function yearUserText(req: YearStoryRequest): string {
+  return [
+    `${req.year} 年`,
+    `统计：\n${req.facts}`,
+    ...req.months.map((m) => `${m.month} 月：${m.text}`),
+  ].join('\n\n')
 }
 
 export function suggestUserText(

@@ -59,6 +59,10 @@ export type JournalRecord = {
   // AI 刚写完一版、而用户自己也写了内容时为 true：卡片上两版并排，等用户选一版（决策 0012 第 3 条）。
   // 不建索引的可选字段，旧记录里没有它，等同于 false
   choosing?: boolean
+  // 最后修改时间，数据库钩子自动写，同步时用（决策 0029 第 3c 条）。旧数据没有
+  _mt?: number
+  // 文字是不是用语音说的（决策 0029 第 1 条，使用看板用）。以前的记录没有
+  noteVia?: 'voice' | 'text'
   // aiStatus 为 queued 时，能连上后按哪种方式整理
   aiQueued?: DescribeMode
   // 上次整理之后加过或删过照片：卡片上提示"要重新整理吗"，用户点了才整理（决策 0013 第 1 条）
@@ -102,6 +106,9 @@ export type Embedding = { recordId: string; hash: string; vector: Float32Array }
 // 零散的设置（偏好说明、出行总结等），一个键一行
 export type Setting = { key: string; value: unknown }
 
+// 删除标记（决策 0029 第 3c 条）：同步时让别的设备也删掉。key = "表名/编号"
+export type Tombstone = { key: string; table: string; id: string; at: number }
+
 export type StoredPhoto = {
   id: string
   recordId: string
@@ -113,6 +120,7 @@ export type StoredPhoto = {
   height: number
   blob: Blob
   thumb: Blob
+  _mt?: number // 同上，同步用
 }
 
 // 行政区边界（决策 0020）：多边形 → 环 → [经度, 纬度, …]，WGS-84，和打包的边界数据同一种结构
@@ -207,6 +215,7 @@ export const db = new Dexie('footprint-journal') as Dexie & {
   track: EntityTable<TrackPoint, 'id'>
   plans: EntityTable<Plan, 'id'>
   shares: EntityTable<ShareLink, 'id'>
+  tombstones: EntityTable<Tombstone, 'key'>
 }
 
 db.version(1).stores({
@@ -351,3 +360,58 @@ db.version(11).stores({
   plans: 'id, start',
   shares: 'id, tripId',
 })
+
+// v12（决策 0029 第 3c 条）：删除标记，同步用。会进同步，不进备份
+db.version(12).stores({
+  records: 'id, takenAt',
+  photos: 'id, recordId',
+  edits: 'id, recordId, at',
+  settings: 'key',
+  drafts: 'id',
+  embeddings: 'recordId',
+  aiCalls: 'id, at',
+  wishes: 'id, addedAt',
+  visited: 'id',
+  track: '++id, t',
+  plans: 'id, start',
+  shares: 'id, tripId',
+  tombstones: 'key, at',
+})
+
+// 参与同步的表（轨迹另算：按时间合并）。写入时由钩子统一加修改时间 _mt，删除时记删除标记，
+// 不用改每一个写入的地方（决策 0029 第 3c 条）。
+// 从网盘合并来的行自带 _mt，原样保留；本机代码从来不自己写 _mt
+export const SYNCED_TABLES = [
+  'records',
+  'photos',
+  'edits',
+  'wishes',
+  'visited',
+  'plans',
+  'shares',
+  'aiCalls',
+  'settings',
+] as const
+export type SyncedTable = (typeof SYNCED_TABLES)[number]
+
+let pendingTombs: Tombstone[] = []
+function flushTombs() {
+  const batch = pendingTombs
+  pendingTombs = []
+  if (batch.length) void db.tombstones.bulkPut(batch).catch(() => {})
+}
+
+for (const name of SYNCED_TABLES) {
+  const t = db.table(name)
+  t.hook('creating', (_pk, obj: { _mt?: number }) => {
+    obj._mt ??= Date.now()
+  })
+  t.hook('updating', (mods) =>
+    '_mt' in (mods as object) ? undefined : { _mt: Date.now() },
+  )
+  t.hook('deleting', (pk, _obj, tx) => {
+    const id = String(pk)
+    pendingTombs.push({ key: `${name}/${id}`, table: name, id, at: Date.now() })
+    tx.on('complete', flushTombs)
+  })
+}

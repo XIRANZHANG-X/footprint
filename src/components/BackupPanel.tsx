@@ -15,6 +15,7 @@ import {
   setAutoBackupEnabled,
 } from '../lib/reminder.ts'
 import { saveFile } from '../lib/saveFile.ts'
+import { SyncCard } from './SyncCard.tsx'
 import {
   getLastBackupAt,
   isQuotaError,
@@ -160,6 +161,8 @@ export function BackupPanel({ records }: { records: JournalRecord[] }) {
           </p>
         )}
       </div>
+
+      <SyncCard />
 
       {native && (
         <div className="px-card p-3 text-sm">
